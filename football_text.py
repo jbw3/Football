@@ -1,17 +1,18 @@
 # Football Text
 #
-# This module contains all of the Text sprites needed for 'game_test3.py'
+# This module contains all of the Text sprites needed for 'Football.py'
 
 # imports
 from livewires import games
+import time
 
 # colors for text objects
-blue = (0, 0, 200, 0)
-gray = (175, 175, 175, 0)
-green = (0, 200, 0, 0)
-red = (210, 0, 0, 0)
-white = (255, 255, 255, 0)
-yellow = (240, 240, 0, 0)
+BLUE = (0, 0, 200, 0)
+GRAY = (175, 175, 175, 0)
+GREEN = (0, 200, 0, 0)
+RED = (210, 0, 0, 0)
+WHITE = (255, 255, 255, 0)
+YELLOW = (240, 240, 0, 0)
 
 # Base text class
 class Click_text(games.Text):
@@ -89,6 +90,70 @@ class Blink_text(games.Text):
             else:
                 self.set_value(self.value1)
 
+class Arrow(Click_text):
+    def __init__(self, text, value, size, color1, color2, x=0, y=0,
+                 top=None, bottom=None, right=None, left=None):
+        self.text = text
+        super(Arrow, self).__init__(text.game, value, size, color1, color2, x=x,
+                                    y=y, top=top, bottom=bottom, right=right,
+                                    left=left, is_collideable=False)
+        self.can_change = True
+
+    def update(self):
+        if not games.mouse.is_pressed(0):
+            self.can_change = True
+
+        super(Arrow, self).update()
+
+    def func(self):
+        if self.can_change:
+            self.text.update_choice(self.value)
+            self.can_change = False
+
+class Multi_choice(games.Text):
+    def __init__(self, game, value, size, color1, color2, choices, choice, pad,
+                 x=0, y=0, top=None, bottom=None, right=None, left=None):
+        self.game = game
+        self.choices = choices
+        self.__choice = choice
+        self.pad = pad
+        super(Multi_choice, self).__init__(value=value + " ", size=size,
+                                           color=color1, x=x, y=y, top=top,
+                                           bottom=bottom, right=right, left=left,
+                                           is_collideable=False)
+        games.screen.add(self)
+        self.larrow = Arrow(self, "<", size, color1, color2, y=y, top=top,
+                            bottom=bottom, left=self.right)
+        games.screen.add(self.larrow)
+        self.text = games.Text(value=str(choice),
+                               size=size, color=color1,
+                               x=self.larrow.right + pad, y=y, top=top,
+                               bottom=bottom, is_collideable=False)
+        games.screen.add(self.text)
+        self.rarrow = Arrow(self, ">", size, color1, color2, y=y, top=top,
+                            bottom=bottom, left=self.text.x + pad)
+        games.screen.add(self.rarrow)
+
+    def update_choice(self, arrow):
+        index = self.choices.index(self.__choice)
+        if arrow == "<":
+            if index == 0:
+                index = len(self.choices) - 1
+            else:
+                index -= 1
+
+        elif arrow == ">":
+            if index == len(self.choices) - 1:
+                index = 0
+            else:
+                index += 1
+
+        self.__choice = self.choices[index]
+        self.text.value = str(self.__choice)
+
+    def get_choice(self):
+        return self.__choice
+
 # Text classes used in football game
 class Text(games.Text):
     """ A text object """
@@ -129,11 +194,11 @@ class Ask_text(games.Text):
         """ Gets team names from players """
         if not self.game.team1:
             self.set_value("Player 1, what team do you want?")
-            self.set_color(yellow)
+            self.set_color(YELLOW)
                 
         elif not self.game.team2:
             self.set_value("Player 2, what team do you want?")
-            self.set_color(blue)
+            self.set_color(BLUE)
 
         else:
             for sprite in games.screen.get_all_objects():
@@ -141,22 +206,22 @@ class Ask_text(games.Text):
                     sprite.destroy()
 
             text = Confirm_text(game = self.game, value = "Confirm",
-                                size = 30, color1 = white, color2 = green,
+                                size = 30, color1 = WHITE, color2 = GREEN,
                                 left = 10, top = 10)
             games.screen.add(text)
 
             text = Cancel_text(game = self.game, value = "Cancel",
-                               size = 30, color1 = white, color2 = red,
+                               size = 30, color1 = WHITE, color2 = RED,
                                left = 100, top = 10)
             games.screen.add(text)
 
             text = Text(game = self.game, value = "Player 1 - " + self.game.team1,
-                         size = 30, color = yellow, left = 10, top = 40)
+                         size = 30, color = YELLOW, left = 10, top = 40)
             games.screen.add(text)
 
             text = Text(game = self.game,
                 value = "Player 2 - " + self.game.team2, size = 30,
-                         color = blue, left = 10, top = 70)
+                         color = BLUE, left = 10, top = 70)
             games.screen.add(text)
 
             self.destroy()
@@ -202,7 +267,7 @@ class Play_again_text(Blink_text):
                  right = None, left = None):
         super(Play_again_text, self).__init__(game = game,
                                               value = "Press Enter to continue",
-                                              size = 50, color = red, rate = 30,
+                                              size = 50, color = RED, rate = 30,
                                               x = x, y = y, top = top,
                                               bottom = bottom, right = right,
                                               left = left)
@@ -223,100 +288,58 @@ class Settings_text(Click_text):
     def func(self):
         self.game.show_settings()
 
-class Clock_settings(Click_text):
-    def __init__(self, game):
-        self.game = game
-        self.can_change = True
-        if self.game.clock_rate == 1:
-            self.index = 0
-        elif self.game.clock_rate == 2:
-            self.index = 1
-        elif self.game.clock_rate == 4:
-            self.index = 2
-        elif self.game.clock_rate == 12:
-            self.index = 3
+class Clock_settings(Multi_choice):
+    def __init__(self, game, choice):
+        if choice == 60:
+            string = "1 hour"
+        elif choice == 30:
+            string = "30 min"
+        elif choice == 15:
+            string = "15 min"
+        elif choice == 5:
+            string = "5 min"
+        super(Clock_settings, self).__init__(game, "Length of game:", 40,
+                                              WHITE, GRAY, ["5 min", "15 min",
+                                               "30 min", "1 hour"], string, 50,
+                                              left=10, top=10)
 
-        self.options = (("1 hour", 1), ("30 min", 2), ("15 min", 4),
-                        ("5 min", 12))
+    def get_choice(self):
+        settings = {"1 hour" : 60, "30 min" : 30, "15 min" : 15, "5 min" : 5}
+        return settings[super(Clock_settings, self).get_choice()]
 
-        super(Clock_settings, self).__init__(game = self.game,
-                                             value = "Length of game: " + self.options[self.index][0],
-                                             size = 40, color1 = white,
-                                             color2 = gray, left = 10, top = 10)        
-
-    def update(self):
-        if not games.mouse.is_pressed(0):
-            self.can_change = True
-
-        super(Clock_settings, self).update()
-
-    def func(self):
-        if self.can_change:
-            self.index += 1
-
-            if self.index > 3:
-                self.index = 0
-            elif self.index < 0:
-                self.index = 3
-
-            self.game.clock_rate = self.options[self.index][1]
-            self.set_value("Length of game: " + self.options[self.index][0])
-            self.top = 10
-            self.left = 10
-
-            self.can_change = False
-
-class Sound_settings(Click_text):
-    def __init__(self, game):
-        self.options = (("ON", True), ("OFF", False))
-        self.can_change = True
-        if game.sound_set:
-            self.index = 0
+class Sound_settings(Multi_choice):
+    def __init__(self, game, choice):
+        if choice:
+            string = "ON"
         else:
-            self.index = 1
-        super(Sound_settings, self).__init__(game = game,
-                                             value = "Sound: " + self.options[self.index][0],
-                                             size = 40, color1 = white,
-                                             color2 = gray, left = 10,
-                                             top = game.c_settings.bottom + 10)
+            string = "OFF"
+        super(Sound_settings, self).__init__(game, "Sound:", 40, WHITE, GRAY,
+                                             ["ON", "OFF"], string, 35, left=10,
+                                             top=game.c_settings.bottom + 10)
 
-    def update(self):
-        if not games.mouse.is_pressed(0):
-            self.can_change = True
-
-        super(Sound_settings, self).update()
-
-    def func(self):
-        if self.can_change:
-            if self.index == 0:
-                self.index = 1
-            else:
-                self.index = 0
-
-            self.game.sound_set = self.options[self.index][1]
-            self.set_value("Sound: " + self.options[self.index][0])
-            self.top = self.game.c_settings.bottom + 10
-            self.left = 10
-
-            self.can_change = False
+    def get_choice(self):
+        settings = {"ON" : True, "OFF" : False}
+        return settings[super(Sound_settings, self).get_choice()]
 
 class Settings_exit(Click_text):
     def __init__(self, game):
         super(Settings_exit, self).__init__(game = game,
                                             value = "Exit settings",
-                                            size = 40, color1 = white,
-                                            color2 = red,
+                                            size = 40, color1 = WHITE,
+                                            color2 = RED,
                                             right = games.screen.width - 10,
                                             bottom = games.screen.height - 10)
 
     def func(self):
+        self.game.game_length = self.game.c_settings.get_choice()
+        self.game.sound_set = self.game.s_settings.get_choice()
         self.game.pick_teams()
 
 class Game_exit(Click_text):
     def __init__(self, game):
         super(Game_exit, self).__init__(game = game, value = "Exit",
-                                        size = 40, color1 = white,
-                                        color2 = red,
+                                        size = 40, color1 = WHITE,
+                                        color2 = RED,
                                         left = 20,
                                         bottom = games.screen.height - 20)
 
@@ -329,10 +352,10 @@ class Play_text(games.Text):
 
         if self.game.team1_offence:
             value = "Player 1, pick your play"
-            color = yellow
+            color = YELLOW
         else:
             value = "Player 2, pick your play"
-            color = blue
+            color = BLUE
         super(Play_text, self).__init__(value = value,
                                         size = 75, color = color,
                                         x = games.screen.width / 2,
@@ -342,29 +365,48 @@ class Play_text(games.Text):
         self.game.non_activated_sprites.append(self)
 
     def update(self):
-        if games.keyboard.is_pressed(games.K_1):
+        if self.game.sBoard.game_is_over():
+            self.game.end_game()
+
+        if games.keyboard.is_pressed(games.K_q) and self.game.blitz == 0:
+            if games.keyboard.is_pressed(games.K_LSHIFT):
+                if games.keyboard.is_pressed(games.K_LCTRL):
+                    self.game.blitz = 4
+                else:
+                    self.game.blitz = 2
+            elif games.keyboard.is_pressed(games.K_LCTRL):
+                self.game.blitz = 3
+            else:
+                self.game.blitz = 1
+
+        if games.keyboard.is_pressed(games.K_0):
+            self.game.play_num = 0
+            self.game.new_play()
+            self.destroy()
+        elif games.keyboard.is_pressed(games.K_1):
             self.game.play_num = 1
             self.game.new_play()
             self.destroy()
-        if games.keyboard.is_pressed(games.K_2):
+        elif games.keyboard.is_pressed(games.K_2):
             self.game.play_num = 2
             self.game.new_play()
             self.destroy()
-        if games.keyboard.is_pressed(games.K_3):
+        elif games.keyboard.is_pressed(games.K_3):
             self.game.play_num = 3
             self.game.new_play()
             self.destroy()
-        if games.keyboard.is_pressed(games.K_4):
+        elif games.keyboard.is_pressed(games.K_4):
             self.game.play_num = 4
             self.game.new_play()
             self.destroy()
-        if games.keyboard.is_pressed(games.K_5):
+        elif games.keyboard.is_pressed(games.K_5):
             self.game.play_num = 5
             self.game.new_play()
             self.destroy()
-
-        if games.keyboard.is_pressed(games.K_q):
-            self.game.blitz = True
+        elif games.keyboard.is_pressed(games.K_6):
+            self.game.play_num = 6
+            self.game.new_play()
+            self.destroy()
 
     def destroy(self):
         try:
@@ -379,7 +421,7 @@ class Score(games.Text):
         self.game = game
         super(Score, self).__init__(
         value = self.game.team1 + ": 0     " + self.game.team2 + ": 0",
-            size = 30, color = red, left = 10, top = 5, is_collideable = False)
+            size = 30, color = RED, left = 10, top = 5, is_collideable = False)
 
         self.game.non_activated_sprites.append(self)
         self.game.do_not_destroy.append(self)
@@ -392,8 +434,8 @@ class Score(games.Text):
 class Downs_text(games.Text):
     def __init__(self, game):
         self.game = game
-        super(Downs_text, self).__init__(value = "Down: 1", size = 30,
-                                         color = red,
+        super(Downs_text, self).__init__(value = "1st & 10", size = 30,
+                                         color = RED,
                                          right = games.screen.width - 10,
                                          top = 5, is_collideable = False)
 
@@ -401,72 +443,88 @@ class Downs_text(games.Text):
         self.game.do_not_destroy.append(self)
 
     def update_downs(self):
-        self.set_value("Down: " + str(self.game.down))
+        if self.game.down == 1:
+            string = "1st"
+        elif self.game.down == 2:
+            string = "2nd"
+        elif self.game.down == 3:
+            string = "3rd"
+        elif self.game.down == 4:
+            string = "4th"
+        string += " & "
+        if self.game.field.bottom - self.game.line_of_scrimmage - 360 - self.game.for_first_down <= self.game.field.top + 360:
+            string += "Goal"
+        else:
+            if int(self.game.for_first_down / 36) == 0:
+                string += "inches"
+            else:
+                string += str(int(self.game.for_first_down / 36))
+        self.set_value(string)
         self.right = games.screen.width - 10
         self.top = 5
 
 class Game_clock(games.Text):
-    def __init__(self, game, rate):
+    def __init__(self, game, length):
         self.game = game
-        super(Game_clock, self).__init__(value = "15:00", size = 30,
-                                         color = red,
+        if length == 60:
+            self.start_min = 15
+            self.start_sec = 0
+        elif length == 30:
+            self.start_min = 7
+            self.start_sec = 30
+        elif length == 15:
+            self.start_min = 3
+            self.start_sec = 45
+        elif length == 5:
+            self.start_min = 1
+            self.start_sec = 15
+
+        self.is_running = False
+        self.minutes = self.start_min
+        self.seconds = self.start_sec
+        self.time_second = time.localtime()[5]
+        self.ended_game = False
+
+        if len(str(self.seconds)) < 2:
+            sec_str = "0" + str(self.seconds)
+        else:
+            sec_str = str(self.seconds)
+        super(Game_clock, self).__init__(value = str(self.minutes) + ":" + sec_str,
+                                         size = 30, color = RED,
                                          x = games.screen.width / 2,
                                          top = 5, is_collideable = False)
 
         self.game.non_activated_sprites.append(self)
         self.game.do_not_destroy.append(self)
 
-        self.ONE_SECOND = 45
-        self.SPEED = self.ONE_SECOND / rate
-
-        self.is_running = False
-        self.timer = self.SPEED
-        self.minutes = 15
-        self.seconds = 60
-        self.loop = True
-        self.min_str = ""
-        self.sec_str = ""
-
     def update(self):
         if self.is_running:
-            if self.timer > 0:
-                self.timer -= 1
-            else:
-                self.seconds -= 1
-                self.timer = self.SPEED
+            if self.time_second != time.localtime()[5]:
+                if self.seconds == 0:
+                    if self.minutes == 0:
+                        self.is_running = False
+                    else:
+                        self.minutes -= 1
+                        self.seconds = 59
+                else:
+                    self.seconds -= 1
+                self.time_second = time.localtime()[5]
                 self.update_value()
 
-            if self.seconds == 0:
-                if self.minutes == 0:
-                    self.is_running = False
-                    self.game.quarter += 1
-                    self.game.sBoard.update_quarter()
-                    if self.game.quarter <= 4:
-                        self.reset()
-                else:
-                    self.seconds = 60
-                    self.update_value()
+        if self.minutes == 0 and self.seconds == 0 and not self.game.play_status == 0:
+            self.game.change_quarter()
 
-            if self.loop:
-                if self.seconds == 59:
-                    self.minutes -= 1
-                    self.loop = False
-                    self.update_value()
-
-            if self.seconds == 58:
-                self.loop = True
+        if self.game_is_over() and not self.ended_game:
+            self.ended_game = True
+            self.game.end_game()
 
     def update_value(self):
-        self.min_str = str(self.minutes)
         if len(str(self.seconds)) < 2:
-            self.sec_str = "0" + str(self.seconds)
+            sec_str = "0" + str(self.seconds)
         else:
-            if self.seconds == 60:
-                self.sec_str = "00"
-            else:
-                self.sec_str = str(self.seconds)
+            sec_str = str(self.seconds)
 
-        self.set_value(self.min_str + ":" + self.sec_str)
+        self.set_value(str(self.minutes) + ":" + sec_str)
         self.x = games.screen.width / 2
         self.top = 5
 
@@ -479,49 +537,49 @@ class Game_clock(games.Text):
 
     def reset(self):
         self.is_running = False
-        self.timer = self.SPEED
-        self.minutes = 15
-        self.seconds = 60
-        self.loop = True
-        self.min_str = ""
-        self.sec_str = ""
-        self.set_value("15:00")
+        self.minutes = self.start_min
+        self.seconds = self.start_sec
+        if len(str(self.seconds)) < 2:
+            sec_str = "0" + str(self.seconds)
+        else:
+            sec_str = str(self.seconds)
+        self.set_value(str(self.minutes) + ":" + sec_str)
         self.x = games.screen.width / 2
         self.top = 10
+
+    def game_is_over(self):
+        return (self.minutes == 0 and self.seconds == 0 and ((self.game.quarter == 4 and self.game.team1_score != self.game.team2_score) or self.game.quarter > 4) and not self.game.play_status == 0) or (self.game.quarter == 5 and self.game.team1_score != self.game.team2_score)
 
 class Play_clock(games.Text):
     def __init__(self, game, top):
         self.game = game
         self.set_top = top
         super(Play_clock, self).__init__(value = ":25", size = 30,
-                                         color = red,
+                                         color = RED,
                                          x = games.screen.width / 2,
                                          top = top,
                                          is_collideable = False)
 
         self.game.non_activated_sprites.append(self)
 
-        self.ONE_SECOND = 45
-
-        self.timer = self.ONE_SECOND
+        self.time_second = time.localtime()[5]
         self.seconds = 25
 
     def update(self):
         if self.game.sBoard.quarter_text.value == "Game Finished":
             self.destroy()
 
-        if self.timer > 0:
-            self.timer -= 1
-        else:
+        if self.time_second != time.localtime()[5]:
+            self.time_second = time.localtime()[5]
             self.seconds -= 1
-            self.timer = self.ONE_SECOND
             self.update_value()
 
         if self.seconds == 0:
-            self.game.penalize(yards = 5, string = "Delay of game")
+            self.game.down -= 1
+            self.game.penalize(yards=5, string="Delay of game")
             self.destroy()
 
-        if self.game.play_is_running:
+        if self.game.play_status == 0:
             self.destroy()
 
     def update_value(self):
@@ -544,7 +602,7 @@ class Quarter_text(games.Text):
     def __init__(self, game):
         self.game = game
         super(Quarter_text, self).__init__(value = "1st Quarter", size = 30,
-                                         color = red,
+                                         color = RED,
                                          x = games.screen.width * 3 / 4,
                                          top = 5, is_collideable = False)
 
@@ -553,18 +611,15 @@ class Quarter_text(games.Text):
 
     def update_value(self):
         if self.game.quarter == 2:
-            string = "2nd"
+            self.set_value("2nd Quarter")
         elif self.game.quarter == 3:
-            string = "3rd"
+            self.set_value("3rd Quarter")
         elif self.game.quarter == 4:
-            string = "4th"
-        elif self.game.quarter > 4:
-            string = "Game Finished"
-
-        if string != "Game Finished":
-            string += " Quarter"
-
-        self.set_value(string)
+            self.set_value("4th Quarter")
+        elif self.game.quarter == 5:
+            self.set_value("OT")
+        else:
+            self.set_value("Game Finished")
 
         self.x = games.screen.width * 3 / 4
         self.top = 5
@@ -572,10 +627,9 @@ class Quarter_text(games.Text):
 # Message class used in game
 class Football_message(games.Message):
     previous = None
-    def __init__(self, game, value, size = 120, color = red,
-                 x = 0,
-                 y = 0, top = None, bottom = None, left = None, right = None,
-                 lifetime = 125, is_collideable = False, after_death = None):
+    def __init__(self, game, value, size=120, color=RED, x=0, y=0, top=None,
+                 bottom=None, left=None, right=None, lifetime=125,
+                 is_collideable=False, after_death=None):
         if Football_message.previous != None:
             Football_message.previous.destroy()
         super(Football_message, self).__init__(value = value, size = size,
@@ -596,15 +650,3 @@ class Football_message(games.Message):
         except(ValueError):
             pass
         super(Football_message, self).destroy()
-
-################################################################################
-################################################################################
-
-if __name__ == "__main__":
-    print \
-"""
-This is a module designed for a football game. It contains all of Text
-objects needed for the game.
-"""
-    raw_input("\n\nPress the enter key to exit.")
-    
