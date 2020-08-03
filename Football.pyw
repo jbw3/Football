@@ -1,24 +1,30 @@
 # Football
-# Version 5
+# Version 6
 #
 # A football game for two players. The player on offence controls the
 # quarterback first, and then the player who catches the ball. The defence is
-# controlled by the computer.
+# controlled by the second player.
 #
 # To do:
 # 1. make football players' arms
 # 2. add sounds
 # 3. make it a safety if defence runs out of its own end zone???
+# 4. make defence able to face player with ball
+# 5. make two minute warning
+# 6. change game length settings so user can pick minutes per quarter
+# 7. pause after each quarter
+# 8. end play when football goes out of bounds
+# 9. make min angle change per player per frame
+# 10. fix penalties so line of scrimmage will not be in end zone
 
 # import games module
-from livewires import games
+import games
 
 # initialize screen
-games.init(screen_width=1020, screen_height=700, fps=50,
-           screen_title="Football")
+games.init(screen_width=1020, screen_height=700, fps=50)
 
 # import other modules
-import random, shelve, football_text as ftxt, football_players as fplayers, time
+import sys, random, shelve, football_text as ftxt, players
 pygame = games.pygame
 # football_text is a module specially designed for this game. It has all of the
 # text and message objects needed for this game.
@@ -57,120 +63,106 @@ class Bar(games.Sprite):
 
 class Field(games.Sprite):
     """ The football field """
-    TIMER = 120
+    VPAD = 720
+    HPAD = 520
+    VPAD1 = 360
+    TIMER = 100
     def __init__(self, game):
         """ Initializes object """
         self.game = game
-        super(Field, self).__init__(image=games.load_image("images\\football_field.bmp", False),
+        super(Field, self).__init__(games.load_image("images\\field.bmp", False),
                                     x=games.screen.width/2,
                                     y=games.screen.height/2,
                                     is_collideable=False)
         self.save = True
-        self.timer = Field.TIMER
+        self.reset_timer()
 
         self.game.do_not_destroy.append(self)  # add self to do_not_destroy list
 
     def update(self):
-        if self.game.play_status == 1:
-            self.timer -= 1
-            if self.timer == 49:
-                self.save_frame()
-            elif self.timer == 0:
-                self.timer = Field.TIMER
-                if not self.game.sBoard.game_is_over():
-                    self.game.pick_play()
+        if not self.game.timeout:
+            if self.game.play_status == 1:
+                if self.timer == Field.TIMER:
+                    self.save_frame()
+                self.timer -= 1
+                if self.timer == 0:
+                    self.reset_timer()
+                    if not self.game.sBoard.game_is_over():
+                        self.game.pick_play()
 
-        elif self.game.play_status == -1:
-            if games.keyboard.is_pressed(games.K_q) and self.game.blitz == 0:
-                if games.keyboard.is_pressed(games.K_LSHIFT):
-                    if games.keyboard.is_pressed(games.K_LCTRL):
-                        self.game.blitz = 4
-                    else:
-                        self.game.blitz = 2
-                elif games.keyboard.is_pressed(games.K_LCTRL):
-                    self.game.blitz = 3
-                else:
-                    self.game.blitz = 1
+            elif self.game.play_status == -1:
+                if self.game.blitz == 0:
+                    for controller in self.game.d_controllers:
+                        if controller.get_hat(0)[0] == 1:
+                            self.game.blitz = 3
+                        elif controller.get_hat(0)[0] == -1:
+                            self.game.blitz = 2
+                        elif controller.get_hat(0)[1] == 1:
+                            self.game.blitz = 1
+                        elif controller.get_hat(0)[1] == -1:
+                            self.game.blitz = 4
 
-        else:
-            if self.save:
-                self.save_frame()
-            self.save = not self.save
+            elif self.game.play_status == 0:
+                if self.save:
+                    self.save_frame()
+                self.save = not self.save
 
-            if self.game.ball_carrier in self.game.o_players and self.game.ball_carrier.top < self.top + 360:
-                self.game.line_of_scrimmage = 1083
-                self.game.for_first_down = 360
-                self.game.play_status = 1
-                self.game.ball_carrier.speed = 0
-                if self.game.team1_offence:
-                    self.game.team1_score += 6
-                else:
-                    self.game.team2_score += 6
-                self.game.sBoard.update_score()
-                self.game.down = 0
-                self.game.sBoard.stop_clock()
-                self.game.change_offence()
-                message = ftxt.Football_message(game=self.game,
-                                                x=games.screen.width / 2,
-                                                y=games.screen.height / 2,
-                                                value="Touchdown!")
-                games.screen.add(message)
+                if self.game.ball_carrier in self.game.o_players and self.game.ball_carrier.top < self.top + Field.VPAD:
+                    self.game.touchdown(True)
 
-            elif self.game.ball_carrier in self.game.o_players and self.game.ball_carrier.bottom > self.bottom:
-                self.game.play_status = 1
-                self.game.for_first_down = 360
-                self.game.line_of_scrimmage = 1083
-                if self.game.team1_offence:
-                    self.game.team2_score += 2
-                else:
-                    self.game.team1_score += 2
-                self.game.sBoard.update_score()
-                self.game.down = 0
-                self.game.sBoard.stop_clock()
-                message = ftxt.Football_message(game=self.game,
-                                                x=games.screen.width / 2,
-                                                y=games.screen.height / 2,
-                                                value="Safety!")
-                games.screen.add(message)
+                elif self.game.ball_carrier in self.game.o_players and self.game.ball_carrier.bottom > self.bottom - Field.VPAD1:
+                    self.game.safety()
 
-            elif self.game.ball_carrier in self.game.d_players and self.game.ball_carrier.bottom > self.bottom - 360:
-                self.game.line_of_scrimmage = 1083
-                self.game.for_first_down = 360
-                self.game.play_status = 1
-                self.game.ball_carrier.speed = 0
-                if self.game.team1_offence:
-                    self.game.team2_score += 6
-                else:
-                    self.game.team1_score += 6
-                self.game.sBoard.update_score()
-                self.game.down = 0
-                self.game.sBoard.stop_clock()
-                message = ftxt.Football_message(game=self.game,
-                                                x=games.screen.width / 2,
-                                                y=games.screen.height / 2,
-                                                value="Touchdown!")
-                games.screen.add(message)
+                elif self.game.ball_carrier in self.game.d_players and self.game.ball_carrier.bottom > self.bottom - Field.VPAD:
+                    self.game.touchdown(False)
 
-            elif self.game.ball_carrier in self.game.players and (self.game.ball_carrier.x < self.left or self.game.ball_carrier.x > self.right):
-                self.game.sBoard.stop_clock()
-                self.game.for_first_down -= self.bottom - self.game.line_of_scrimmage - 360 - self.game.ball_carrier.y
-                self.game.line_of_scrimmage = self.bottom - self.game.ball_carrier.y - 360
-                self.game.play_status = 1
-                self.game.ball_carrier.speed = 0
-                self.game.ball_carrier.x_change = 0
-                self.game.ball_carrier.y_change = 0
-                if self.game.ball_carrier in self.game.d_players:
-                    self.game.change_offence()
+                elif self.game.ball_carrier in self.game.players and (self.game.ball_carrier.x < self.left + Field.HPAD or self.game.ball_carrier.x > self.right - Field.HPAD):
+                    self.game.sBoard.stop_clock()
+                    self.game.for_first_down -= self.bottom - self.game.line_of_scrimmage - Field.VPAD - self.game.ball_carrier.y
+                    self.game.line_of_scrimmage = self.bottom - self.game.ball_carrier.y - Field.VPAD
+                    self.game.end_play()
+                    self.game.ball_carrier.speed = 0
+                    self.game.ball_carrier.x_change = 0
+                    self.game.ball_carrier.y_change = 0
+                    if self.game.ball_carrier in self.game.d_players:
+                        self.game.change_offence()
+
+            if self.game.play_status != 0:
+                for controller in self.game.team1_ctrls + self.game.team2_ctrls:
+                    if controller.get_button(8):
+                        if controller in self.game.o_controllers:
+                            if self.game.team1_offence:
+                                team = self.game.team1
+                            else:
+                                team = self.game.team2
+                        else:
+                            if self.game.team1_offence:
+                                team = self.game.team2
+                            else:
+                                team = self.game.team1
+                        self.game.call_timeout(team)
+
+    def center_adjust(self):
+        self.x = games.screen.width / 2
+        self.y = games.screen.height / 2
+
+    def line_adjust(self, padding=0):
+        self.x = games.screen.width / 2
+        self.bottom = (games.screen.height * .75) + self.game.line_of_scrimmage + Field.VPAD + padding
 
     def save_frame(self):
         self.game.replay_list.append(games.screen.last_display)
         if len(self.game.replay_list) > 400:
             del self.game.replay_list[0]
 
+    def reset_timer(self):
+        self.timer = Field.TIMER 
+
 class Scoreboard(object):
     """ The scoreboard """
     def __init__(self, game):
         """ Put all of the scoreboard items on the screen """
+        self.game = game
         # put the background on the screen
         self.background = games.Sprite(
             games.load_image("images\\scoreboard_background.bmp", False),
@@ -179,6 +171,8 @@ class Scoreboard(object):
 
         game.non_activated_sprites.append(self.background)
         game.do_not_destroy.append(self.background)
+
+        self.play_clock = None
 
         # put the score on the screen
         self.score = ftxt.Score(game)
@@ -222,8 +216,8 @@ class Scoreboard(object):
 
     def show_play_clock(self):
         """ Put play clock on screen """
-        text = ftxt.Play_clock(self.game, self.game_clock.bottom + 10)
-        games.screen.add(text)
+        self.play_clock = ftxt.Play_clock(self.game, self.game_clock.bottom + 10)
+        games.screen.add(self.play_clock)
 
     def update_downs(self):
         self.downs_text.update_downs()
@@ -369,7 +363,8 @@ class Replay(games.Sprite):
 
 class Game(object):
     """ The game """
-    def __init__(self):
+    def __init__(self, master):
+        self.master = master
         data = shelve.open("football_data.dat", "r")
         self.game_length = data["length"]
         self.sound_set = data["sound"]
@@ -379,33 +374,50 @@ class Game(object):
         self.get_beginning_info()
 
     def set_variables(self):
+        self.team1_ctrls = []
+        self.team1_ctrls.append(self.master.joysticks[0])  # <- temporary
+        self.team2_ctrls = []
+        self.team2_ctrls.append(self.master.joysticks[1])  # <- temporary
+        self.o_controllers = []
+        self.d_controllers = []
+        self.do_not_destroy = []
+        self.circles = []
+        # create circles
+        for i in range(pygame.joystick.get_count()):
+            circle = players.Circle(self, i)
+            self.circles.append(circle)
         self.name1 = ""
         self.name2 = ""
         self.team1 = ""
         self.team2 = ""
         self.team1_score = 0
         self.team2_score = 0
+        self.team1_to = 0
+        self.team2_to = 0
         self.team1_images = []
         self.team2_images = []
         self.team1_offence = True
         self.team1_half = True
+        self.timeout = False
         self.down = 0
         self.quarter = 1
         self.non_activated_sprites = []
         self.ball_carrier = None
+        self.extra_point = False
         self.players = []
         self.o_players = []
         self.d_players = []
         self.can_not_catch = []
-        self.do_not_destroy = []
         self.blitz = 0
-        self.play_num = 0
+        self.play_num = None
         self.play_status = -1
         self.ball_incomplete = False
         self.line_of_scrimmage = 1083
         self.for_first_down = 360
         self.passed_line = False
         self.replay_list = []
+        # interceptions thrown, sacks made
+        self.stats = [[0, 0], [0, 0]]
 
         self.ltackle = None
         self.lltackle = None
@@ -433,6 +445,7 @@ class Game(object):
         self.wr1 = None
         self.wr2 = None
         self.punter = None
+        self.kicker = None
 
     def get_beginning_info(self):
         games.screen.clear()
@@ -520,6 +533,7 @@ class Game(object):
         data = shelve.open("football_data.dat", "r")
         teams = data["teams"].keys()
         data.close()
+        teams.sort()
         for value in teams:
             text = ftxt.Change_text(game=self, value=value,
                                     size=25, color1=ftxt.WHITE,
@@ -751,12 +765,18 @@ class Game(object):
 
         self.start()
 
+    def set_timeouts(self, num):
+        self.team1_to = num
+        self.team2_to = num
+
     def start(self):
         """ Puts the field on the screen """        
         # clear the screen of other sprites
         games.screen.clear()
 
         self.reset_base_speeds()
+        players.Basic_defense.reset_intercept()
+        players.Basic_defense.reset_intercept1()
 
         # put the field on the screen
         self.field = Field(self)
@@ -766,8 +786,6 @@ class Game(object):
 
         self.bar = Bar(self)
         games.screen.add(self.bar)
-
-        fplayers.Basic_defense.reset_intercept()
 
         self.coin_toss()
 
@@ -805,6 +823,7 @@ class Game(object):
         self.blitz = 0
         self.passed_line = False
         self.play_status = -1
+        self.play_num = None
 
         self.ltackle = None
         self.lltackle = None
@@ -832,6 +851,7 @@ class Game(object):
         self.wr1 = None
         self.wr2 = None
         self.punter = None
+        self.kicker = None
 
         # update the downs
         if self.for_first_down <= 0:
@@ -851,341 +871,424 @@ class Game(object):
         self.bar.reset()
 
         # adjust the field on the screen
-        self.field.x = games.screen.width / 2
-        self.field.bottom = (games.screen.height * 3 / 4) + self.line_of_scrimmage + 360
+        self.field.line_adjust()
 
         text = ftxt.Play_text(self)
         games.screen.add(text)
 
+        images = []
+        for i in range(8):
+            images.append("images\\play"+str(i)+".bmp")
+        text = ftxt.Play_selector(self, images, self.o_controllers[0],
+                                  games.screen.height * .6)
+
         text = ftxt.Yard_line(self)
         games.screen.add(text)
 
-        text = ftxt.Play_clock(self, self.sBoard.game_clock.bottom + 10)
-        games.screen.add(text)
+        self.sBoard.show_play_clock()
+
+    def start_play(self):
+        for player in self.d_players:
+            if player.bottom > self.field.bottom - self.line_of_scrimmage - Field.VPAD:
+                self.penalize(-5, "Offsides")
+                break
+        else:
+            self.play_status = 0
+            if not self.extra_point:
+                self.sBoard.start_clock()
+
+    def end_play(self, end_xp=True):
+        self.play_status = 1
+        if self.extra_point and end_xp:
+            self.change_offence()
+            self.line_of_scrimmage = 1080
+            self.for_first_down = 360
+            self.down = 0
+            self.extra_point = False
+
+    def touchdown(self, offence):
+        self.for_first_down = 360
+        ep = self.extra_point
+        self.end_play(offence)
+        self.ball_carrier.speed = 0
+        self.down = 0
+        if offence:
+            if ep:
+                if self.team1_offence:
+                    self.team2_score += 2
+                else:
+                    self.team1_score += 2
+                self.line_of_scrimmage = 1080
+            else:
+                if self.team1_offence:
+                    self.team1_score += 6
+                else:
+                    self.team2_score += 6
+                self.extra_point = True
+                self.line_of_scrimmage = 3528
+        else:
+            if self.team1_offence:
+                self.team2_score += 6
+            else:
+                self.team1_score += 6
+            self.extra_point = True
+            self.line_of_scrimmage = 3528
+            self.change_offence()
+        self.sBoard.update_score()
+        self.sBoard.stop_clock()
+        message = ftxt.Football_message(self, "Touchdown!",
+                                        x=games.screen.width / 2,
+                                        y=games.screen.height / 2)
+        games.screen.add(message)
+
+    def safety(self):
+        self.end_play()
+        self.for_first_down = 360
+        self.line_of_scrimmage = 1083
+        if self.team1_offence:
+            self.team2_score += 2
+        else:
+            self.team1_score += 2
+        self.sBoard.update_score()
+        self.down = 0
+        self.sBoard.stop_clock()
+        self.change_offence()
+        message = ftxt.Football_message(self, "Safety!",
+                                        x=games.screen.width / 2,
+                                        y=games.screen.height / 2)
+        games.screen.add(message)
+
+    def add_offence(self):
+        """ Put the offence on the screen """
+        if self.play_num == 7:
+            self.field.line_adjust(-150)
+            # center
+            self.center = players.STCenter(self, games.screen.width / 2,
+                                            games.screen.height * 3 / 4 - 150)
+            games.screen.add(self.center)
+            # left guard 1
+            self.lol = players.STOL(self, games.screen.width / 2 - 40,
+                                     games.screen.height * 3 / 4 - 150, "l")
+            games.screen.add(self.lol)
+            # left guard 2
+            self.llol = players.STOL(self, games.screen.width / 2 - 80,
+                                      games.screen.height * 3 / 4 - 150, "ll")
+            games.screen.add(self.llol)
+            # right guard 1
+            self.rol = players.STOL(self, games.screen.width / 2 + 40,
+                                     games.screen.height * 3 / 4 - 150, "r")
+            games.screen.add(self.rol)
+            # right guard 2
+            self.rrol = players.STOL(self, games.screen.width / 2 + 80,
+                                      games.screen.height * 3 / 4 - 150, "rr")
+            games.screen.add(self.rrol)
+            # punter
+            self.punter = players.Punter(self, games.screen.width / 2,
+                                          games.screen.height * 3 / 4 + 50)
+            games.screen.add(self.punter)
+        elif self.play_num == 0:
+            # center
+            self.center = players.Center(game = self, x = games.screen.width / 2,
+                                 y = games.screen.height * 3 / 4)
+            games.screen.add(self.center)
+            # right guard 1
+            self.rol = players.OL(game = self, x = games.screen.width / 2 + 40,
+                                y = games.screen.height * 3 / 4, side = "r")
+            games.screen.add(self.rol)
+            # right guard 2
+            self.rrol = players.OL(game = self, x = games.screen.width / 2 + 80,
+                                 y = games.screen.height * 3 / 4, side = "rr")
+            games.screen.add(self.rrol)
+            # left guard 1
+            self.lol = players.OL(game = self, x = games.screen.width / 2 - 40,
+                                y = games.screen.height * 3 / 4, side = "l")
+            games.screen.add(self.lol)
+            # left guard 2
+            self.llol = players.OL(game=self, x=games.screen.width / 2 - 80,
+                                 y=games.screen.height * 3 / 4, side="ll")
+            games.screen.add(self.llol)
+            # tight end
+            self.te1 = players.TE(game=self, x=games.screen.width / 2 - 120,
+                                   y=games.screen.height * 3 / 4, num="1")
+            games.screen.add(self.te1)
+            # quarterback
+            self.qb = players.QB(game=self, x=games.screen.width / 2,
+                    y=games.screen.height * 3 / 4 + 50)
+            games.screen.add(self.qb)
+            # runningback
+            self.rb1 = players.RB(game=self, x=games.screen.width / 2,
+                                   y=games.screen.height - 6, num="1")
+            games.screen.add(self.rb1)
+            # runningback 1
+            self.rb2 = players.RB(game = self, x = games.screen.width / 2,
+                         y = games.screen.height + 40, num="2")
+            games.screen.add(self.rb2)
+            # right wide recicver
+            self.wr2 = players.WR(game = self, x = games.screen.width * 3 / 4,
+                          y = games.screen.height * 3 / 4, side="r")
+            games.screen.add(self.wr2)
+        elif self.play_num == 2 or self.play_num == 5:
+            # center
+            self.center = players.Center(self, games.screen.width / 2,
+                                          games.screen.height * 3 / 4)
+            games.screen.add(self.center)
+            # right guard 1
+            self.rol = players.OL(game=self, x=games.screen.width / 2 + 40,
+                                   y=games.screen.height * 3 / 4, side="r")
+            games.screen.add(self.rol)
+            # right guard 2
+            self.rrol = players.OL(game=self, x=games.screen.width / 2 + 80,
+                                    y=games.screen.height * 3 / 4, side="rr")
+            games.screen.add(self.rrol)
+            # left guard 1
+            self.lol = players.OL(game=self, x=games.screen.width / 2 - 40,
+                                   y=games.screen.height * 3 / 4, side="l")
+            games.screen.add(self.lol)
+            # left guard 2
+            self.llol = players.OL(game=self, x=games.screen.width / 2 - 80,
+                                    y=games.screen.height * 3 / 4, side="ll")
+            games.screen.add(self.llol)
+            # tight end
+            self.te1 = players.TE(game=self, x=games.screen.width / 2 + 120,
+                                   y=games.screen.height * 3 / 4, num="1")
+            games.screen.add(self.te1)
+            # quarterback
+            self.qb = players.QB(game=self, x=games.screen.width / 2,
+                                  y=games.screen.height * 3 / 4 + 50)
+            games.screen.add(self.qb)
+            # runningback
+            self.rb1 = players.RB(game=self, x=games.screen.width / 2,
+                                   y=games.screen.height - 6, num="1")
+            games.screen.add(self.rb1)
+            # left wide recicver
+            self.wr1 = players.WR(game=self, x=games.screen.width / 4,
+                                   y=games.screen.height * 3 / 4, side="l")
+            games.screen.add(self.wr1)
+            # right wide recicver
+            self.wr2 = players.WR(game=self, x=games.screen.width * 3 / 4,
+                                   y=games.screen.height * 3 / 4, side="r")
+            games.screen.add(self.wr2)
+        elif self.play_num == 6:
+            # center
+            self.center = players.Center(game = self, x = games.screen.width / 2,
+                                 y = games.screen.height * 3 / 4)
+            games.screen.add(self.center)
+            # right guard 1
+            self.rol = players.OL(game=self, x=games.screen.width / 2 + 40,
+                                   y=games.screen.height * 3 / 4, side="r")
+            games.screen.add(self.rol)
+            # right guard 2
+            self.rrol = players.OL(game=self, x=games.screen.width / 2 + 80,
+                                    y=games.screen.height * 3 / 4, side="rr")
+            games.screen.add(self.rrol)
+            # left guard 1
+            self.lol = players.OL(game=self, x=games.screen.width / 2 - 40,
+                                   y=games.screen.height * 3 / 4, side="l")
+            games.screen.add(self.lol)
+            # left guard 2
+            self.llol = players.OL(game=self, x=games.screen.width / 2 - 80,
+                                    y=games.screen.height * 3 / 4, side="ll")
+            games.screen.add(self.llol)
+            # tight end
+            self.te1 = players.TE(game=self, x=games.screen.width / 2 + 120,
+                                   y=games.screen.height * 3 / 4, num="1")
+            games.screen.add(self.te1)
+            # quarterback
+            self.qb = players.QB(game=self, x=games.screen.width / 2,
+                                  y=games.screen.height * 3 / 4 + 50)
+            games.screen.add(self.qb)
+            # runningback
+            self.rb1 = players.RB(game=self, x=games.screen.width / 2 + 30,
+                                  y=games.screen.height - 20, num="2")
+            games.screen.add(self.rb1)
+            # left wide recicver
+            self.wr1 = players.WR(game=self, x=games.screen.width / 4,
+                                   y=games.screen.height * 3 / 4, side="l")
+            games.screen.add(self.wr1)
+            # right wide recicver
+            self.wr2 = players.WR(game=self, x=games.screen.width * 3 / 4,
+                                   y=games.screen.height * 3 / 4, side="r")
+            games.screen.add(self.wr2)
+        else:
+            # center
+            self.center = players.Center(game = self, x = games.screen.width / 2,
+                                 y = games.screen.height * 3 / 4)
+            games.screen.add(self.center)
+            # right guard 1
+            self.rol = players.OL(game=self, x=games.screen.width / 2 + 40,
+                                   y=games.screen.height * 3 / 4, side="r")
+            games.screen.add(self.rol)
+            # right guard 2
+            self.rrol = players.OL(game=self, x=games.screen.width / 2 + 80,
+                                    y=games.screen.height * 3 / 4, side="rr")
+            games.screen.add(self.rrol)
+            # left guard 1
+            self.lol = players.OL(game=self, x=games.screen.width / 2 - 40,
+                                   y=games.screen.height * 3 / 4, side="l")
+            games.screen.add(self.lol)
+            # left guard 2
+            self.llol = players.OL(game=self, x=games.screen.width / 2 - 80,
+                                    y=games.screen.height * 3 / 4, side="ll")
+            games.screen.add(self.llol)
+            # quarterback
+            self.qb = players.QB(game=self, x=games.screen.width / 2,
+                                  y=games.screen.height * 3 / 4 + 50)
+            games.screen.add(self.qb)
+            # runningback
+            self.rb1 = players.RB(game=self, x=games.screen.width / 2,
+                                   y=games.screen.height - 6, num="1")
+            games.screen.add(self.rb1)
+            # left wide recicver
+            self.wr1 = players.WR(game=self, x=games.screen.width / 4,
+                                   y=games.screen.height * 3 / 4, side="l")
+            games.screen.add(self.wr1)
+            # right wide recicver
+            self.wr2 = players.WR(game=self, x=games.screen.width * 3 / 4,
+                                   y=games.screen.height * 3 / 4, side="r")
+            games.screen.add(self.wr2)
+
+    def add_defense(self):
+        """ Put the defense on the screen """
+        if self.play_num == 7:
+            # punt returner
+            self.pr = players.PR(self, games.screen.width / 2,
+                                  self.field.top + Field.VPAD + 100)
+            games.screen.add(self.pr)
+            # linbacker
+            self.rlb = players.STLB(self, games.screen.width / 2 - 60,
+                                     games.screen.height * 3 / 4 - 220, "r")
+            games.screen.add(self.rlb)
+            # linbacker
+            self.clb = players.STLB(self, games.screen.width / 2,
+                                     games.screen.height * 3 / 4 - 220, "c")
+            games.screen.add(self.clb)
+            # linbacker
+            self.llb = players.STLB(self, games.screen.width / 2 + 60,
+                                     games.screen.height * 3 / 4 - 220, "l")
+            games.screen.add(self.llb)
+            # right dl 2
+            self.rrtackle = players.STDL(self, games.screen.width / 2 - 80,
+                                          games.screen.height * 3 / 4 - 170, "rr")
+            games.screen.add(self.rrtackle)
+            # right dl 1
+            self.rtackle = players.STDL(self, games.screen.width / 2 - 40,
+                                         games.screen.height * 3 / 4 - 170, "r")
+            games.screen.add(self.rtackle)
+            # center tackle
+            self.ctackle = players.STDL(self, games.screen.width / 2,
+                                         games.screen.height * 3 / 4 - 170, "c")
+            games.screen.add(self.ctackle)
+            # left tackle 1
+            self.ltackle = players.STDL(self, games.screen.width / 2 + 40,
+                                         games.screen.height * 3 / 4 - 170, "l")
+            games.screen.add(self.ltackle)
+            # left dl 2
+            self.lltackle = players.STDL(self, games.screen.width / 2 + 80,
+                                          games.screen.height * 3 / 4 - 170, "ll")
+            games.screen.add(self.lltackle)
+        elif self.play_num == 0:
+            # safety 1
+            self.safety1 = players.Safety(game=self, x=games.screen.width / 2 - 200,
+                                  y=games.screen.height * 3 / 4 - 275, num="1")
+            games.screen.add(self.safety1)
+            # safety 2
+            self.safety2 = players.Safety(game=self, x=games.screen.width / 2 + 200,
+                                  y=games.screen.height * 3 / 4 - 275, num="2")
+            games.screen.add(self.safety2)
+            # left cornerback
+            self.cbl = players.CB(game = self, x = games.screen.width * 3 / 4,
+                          y = games.screen.height * 3 / 4 - 70, side="l")
+            games.screen.add(self.cbl)
+            # linebacker
+            self.rlb = players.LB(game=self, x=games.screen.width / 2 - 80,
+                                   y=games.screen.height * 3 / 4 - 70, side="r")
+            games.screen.add(self.rlb)
+            # linebacker
+            self.clb = players.LB(game=self, x=games.screen.width / 2,
+                                   y=games.screen.height * 3 / 4 - 70, side="c")
+            games.screen.add(self.clb)
+            # linebacker
+            self.llb = players.LB(game=self, x=games.screen.width / 2 + 80,
+                                   y=games.screen.height * 3 / 4 - 70, side="l")
+            games.screen.add(self.llb)
+            # right tackle 3
+            self.rrrtackle = players.DL(game=self, x=games.screen.width / 2 - 120,
+                                y=games.screen.height * 3 / 4 - 20, side="rrr")
+            games.screen.add(self.rrrtackle)
+            # right tackle 2
+            self.rrtackle = players.DL(game=self, x=games.screen.width / 2 - 80,
+                                  y=games.screen.height * 3 / 4 - 20, side="rr")
+            games.screen.add(self.rrtackle)
+            # right tackle 1
+            self.rtackle = players.DL(game=self, x=games.screen.width / 2 - 40,
+                                  y=games.screen.height * 3 / 4 - 20, side="r")
+            games.screen.add(self.rtackle)
+            # left tackle 1
+            self.ltackle = players.DL(game=self, x=games.screen.width / 2 + 40,
+                                  y =games.screen.height * 3 / 4 - 20, side="l")
+            games.screen.add(self.ltackle)
+            # left tackle 2
+            self.lltackle = players.DL(game=self, x=games.screen.width / 2 + 80,
+                                  y=games.screen.height * 3 / 4 - 20, side="ll")
+            games.screen.add(self.lltackle)
+        else:
+            # safety 1
+            self.safety1 = players.Safety(self, games.screen.width / 2 - 200,
+                                         games.screen.height * 3 / 4 - 275, "1")
+            games.screen.add(self.safety1)
+            # safety 2
+            self.safety2 = players.Safety(self, games.screen.width / 2 + 200,
+                                         games.screen.height * 3 / 4 - 275, "2")
+            games.screen.add(self.safety2)
+            # right cornerback
+            self.cbr = players.CB(game = self, x = games.screen.width / 4,
+                          y = games.screen.height * 3 / 4 - 70, side="r")
+            games.screen.add(self.cbr)
+            # left cornerback
+            self.cbl = players.CB(game = self, x = games.screen.width * 3 / 4,
+                          y = games.screen.height * 3 / 4 - 70, side="l")
+            games.screen.add(self.cbl)
+            # linebacker
+            self.rlb = players.LB(game=self, x=games.screen.width / 2 - 80,
+                                   y=games.screen.height * 3 / 4 - 70, side="r")
+            games.screen.add(self.rlb)
+            # linebacker
+            self.clb = players.LB(game=self, x=games.screen.width / 2,
+                                   y=games.screen.height * 3 / 4 - 70, side="c")
+            games.screen.add(self.clb)
+            # linebacker
+            self.llb = players.LB(game=self, x=games.screen.width / 2 + 80,
+                                   y=games.screen.height * 3 / 4 - 70, side="l")
+            games.screen.add(self.llb)
+            # right tackle 2
+            self.rrtackle = players.DL(self, games.screen.width / 2 - 80,
+                                       games.screen.height * 3 / 4 - 20, "rr")
+            games.screen.add(self.rrtackle)
+            # right tackle 1
+            self.rtackle = players.DL(self, games.screen.width / 2 - 40,
+                                      games.screen.height * 3 / 4 - 20, "r")
+            games.screen.add(self.rtackle)
+            # left tackle 1
+            self.ltackle = players.DL(self, games.screen.width / 2 + 40,
+                                      games.screen.height * 3 / 4 - 20, "l")
+            games.screen.add(self.ltackle)
+            # left tackle 2
+            self.lltackle = players.DL(self, games.screen.width / 2 + 80,
+                                       games.screen.height * 3 / 4 - 20, "ll")
+            games.screen.add(self.lltackle)
 
     def new_play(self):
         """ Puts all of the football players on the screen for a new play """
         self.replay_list = []
         self.ball_incomplete = False
 
-        # --- put the players on the screen --- #
-        if self.play_num == 0:
-            self.field.y -= 150
-            # center tackle
-            self.ctackle = fplayers.STDL(self, games.screen.width / 2,
-                                         games.screen.height * 3 / 4 - 170, "c")
-            games.screen.add(self.ctackle)
-            # left tackle 1
-            self.ltackle = fplayers.STDL(self, games.screen.width / 2 + 40,
-                                         games.screen.height * 3 / 4 - 170, "l")
-            games.screen.add(self.ltackle)
-            # left dl 2
-            self.lltackle = fplayers.STDL(self, games.screen.width / 2 + 80,
-                                          games.screen.height * 3 / 4 - 170, "ll")
-            games.screen.add(self.lltackle)
-            # right tackle 1
-            self.rtackle = fplayers.STDL(self, games.screen.width / 2 - 40,
-                                         games.screen.height * 3 / 4 - 170, "r")
-            games.screen.add(self.rtackle)
-            # right dl 2
-            self.rrtackle = fplayers.STDL(self, games.screen.width / 2 - 80,
-                                          games.screen.height * 3 / 4 - 170, "rr")
-            games.screen.add(self.rrtackle)
-            # linbacker
-            self.llb = fplayers.STLB(self, games.screen.width / 2 + 60,
-                                     games.screen.height * 3 / 4 - 220, "l")
-            games.screen.add(self.llb)
-            # linbacker
-            self.clb = fplayers.STLB(self, games.screen.width / 2,
-                                     games.screen.height * 3 / 4 - 220, "c")
-            games.screen.add(self.clb)
-            # linbacker
-            self.rlb = fplayers.STLB(self, games.screen.width / 2 - 60,
-                                     games.screen.height * 3 / 4 - 220, "r")
-            games.screen.add(self.rlb)
-            # punt returner
-            self.pr = fplayers.PR(self, games.screen.width / 2,
-                                  self.field.top + 400)
-            games.screen.add(self.pr)
+        # put the players on the screen
+        self.add_defense()
+        self.add_offence()
 
-            # center
-            self.center = fplayers.STCenter(self, games.screen.width / 2,
-                                            games.screen.height * 3 / 4 - 150)
-            games.screen.add(self.center)
-            # left guard 1
-            self.lol = fplayers.STOL(self, games.screen.width / 2 - 40,
-                                     games.screen.height * 3 / 4 - 150, "l")
-            games.screen.add(self.lol)
-            # left guard 2
-            self.llol = fplayers.STOL(self, games.screen.width / 2 - 80,
-                                      games.screen.height * 3 / 4 - 150, "ll")
-            games.screen.add(self.llol)
-            # right guard 1
-            self.rol = fplayers.STOL(self, games.screen.width / 2 + 40,
-                                     games.screen.height * 3 / 4 - 150, "r")
-            games.screen.add(self.rol)
-            # right guard 2
-            self.rrol = fplayers.STOL(self, games.screen.width / 2 + 80,
-                                      games.screen.height * 3 / 4 - 150, "rr")
-            games.screen.add(self.rrol)
-            # punter
-            self.punter = fplayers.Punter(self, games.screen.width / 2,
-                                          games.screen.height * 3 / 4 + 50)
-            games.screen.add(self.punter)
-        elif self.play_num == 1:
-            # linebacker
-            self.clb = fplayers.LB(game=self, x=games.screen.width / 2,
-                                   y=games.screen.height * 3 / 4 - 70, side="c")
-            games.screen.add(self.clb)
-            # linebacker
-            self.llb = fplayers.LB(game=self, x=games.screen.width / 2 + 60,
-                                   y=games.screen.height * 3 / 4 - 70, side="l")
-            games.screen.add(self.llb)
-            # linebacker
-            self.rlb = fplayers.LB(game=self, x=games.screen.width / 2 - 60,
-                                   y=games.screen.height * 3 / 4 - 70, side="r")
-            games.screen.add(self.rlb)
-            # left tackle 1
-            self.ltackle = fplayers.DL(game=self, x=games.screen.width / 2 + 40,
-                                  y =games.screen.height * 3 / 4 - 20, side="l")
-            games.screen.add(self.ltackle)
-            # left tackle 2
-            self.lltackle = fplayers.DL(game=self, x=games.screen.width / 2 + 80,
-                                  y=games.screen.height * 3 / 4 - 20, side="ll")
-            games.screen.add(self.lltackle)
-            # right tackle 1
-            self.rtackle = fplayers.DL(game=self, x=games.screen.width / 2 - 40,
-                                  y=games.screen.height * 3 / 4 - 20, side="r")
-            games.screen.add(self.rtackle)
-            # right tackle 2
-            self.rrtackle = fplayers.DL(game=self, x=games.screen.width / 2 - 80,
-                                  y=games.screen.height * 3 / 4 - 20, side="rr")
-            games.screen.add(self.rrtackle)
-            # right tackle 3
-            self.rrrtackle = fplayers.DL(game=self, x=games.screen.width / 2 - 120,
-                                y=games.screen.height * 3 / 4 - 20, side="rrr")
-            games.screen.add(self.rrrtackle)
-            # left cornerback
-            self.cbl = fplayers.CB(game = self, x = games.screen.width * 3 / 4,
-                          y = games.screen.height * 3 / 4 - 70, side="l")
-            games.screen.add(self.cbl)
-            # safety 1
-            self.safety1 = fplayers.Safety(game=self, x=games.screen.width / 2 - 200,
-                                  y=games.screen.height * 3 / 4 - 275, num="1")
-            games.screen.add(self.safety1)
-            # safety 2
-            self.safety2 = fplayers.Safety(game=self, x=games.screen.width / 2 + 200,
-                                  y=games.screen.height * 3 / 4 - 275, num="2")
-            games.screen.add(self.safety2)
-
-            # center
-            self.center = fplayers.Center(game = self, x = games.screen.width / 2,
-                                 y = games.screen.height * 3 / 4)
-            games.screen.add(self.center)
-            # right guard 1
-            self.rol = fplayers.OL(game = self, x = games.screen.width / 2 + 40,
-                                y = games.screen.height * 3 / 4, side = "r")
-            games.screen.add(self.rol)
-            # right guard 2
-            self.rrol = fplayers.OL(game = self, x = games.screen.width / 2 + 80,
-                                 y = games.screen.height * 3 / 4, side = "rr")
-            games.screen.add(self.rrol)
-            # left guard 1
-            self.lol = fplayers.OL(game = self, x = games.screen.width / 2 - 40,
-                                y = games.screen.height * 3 / 4, side = "l")
-            games.screen.add(self.lol)
-            # left guard 2
-            self.llol = fplayers.OL(game=self, x=games.screen.width / 2 - 80,
-                                 y=games.screen.height * 3 / 4, side="ll")
-            games.screen.add(self.llol)
-            # tight end
-            self.te1 = fplayers.TE(game=self, x=games.screen.width / 2 - 120,
-                                   y=games.screen.height * 3 / 4, num="1")
-            games.screen.add(self.te1)
-            # quarterback
-            self.qb = fplayers.QB(game=self, x=games.screen.width / 2,
-                    y=games.screen.height * 3 / 4 + 50)
-            games.screen.add(self.qb)
-            # runningback
-            self.rb1 = fplayers.RB(game=self, x=games.screen.width / 2,
-                                   y=games.screen.height - 6, num="1")
-            games.screen.add(self.rb1)
-            # runningback 1
-            self.rb2 = fplayers.RB(game = self, x = games.screen.width / 2,
-                         y = games.screen.height + 40, num="2")
-            games.screen.add(self.rb2)
-            # right wide recicver
-            self.wr2 = fplayers.WR(game = self, x = games.screen.width * 3 / 4,
-                          y = games.screen.height * 3 / 4, side="r")
-            games.screen.add(self.wr2)
-        elif self.play_num == 3 or self.play_num == 6:
-            # linebacker
-            self.rlb = fplayers.LB(self, games.screen.width / 2 - 60,
-                                   games.screen.height * 3 / 4 - 70, "r")
-            games.screen.add(self.rlb)
-            # linebacker
-            self.clb = fplayers.LB(self, games.screen.width / 2,
-                                   games.screen.height * 3 / 4 - 70, "c")
-            games.screen.add(self.clb)
-            # linebacker
-            self.llb = fplayers.LB(self, games.screen.width / 2 + 60,
-                                   games.screen.height * 3 / 4 - 70, "l")
-            games.screen.add(self.llb)
-            # left tackle 1
-            self.ltackle = fplayers.DL(self, games.screen.width / 2 + 40,
-                                       games.screen.height * 3 / 4 - 20, "l")
-            games.screen.add(self.ltackle)
-            # left tackle 2
-            self.lltackle = fplayers.DL(self, games.screen.width / 2 + 80,
-                                        games.screen.height * 3 / 4 - 20, "ll")
-            games.screen.add(self.lltackle)
-            # right tackle 1
-            self.rtackle = fplayers.DL(self, games.screen.width / 2 - 40,
-                                       games.screen.height * 3 / 4 - 20, "r")
-            games.screen.add(self.rtackle)
-            # right tackle 2
-            self.rrtackle = fplayers.DL(self, games.screen.width / 2 - 80,
-                                        games.screen.height * 3 / 4 - 20, "rr")
-            games.screen.add(self.rrtackle)
-            # left cornerback
-            self.cbl = fplayers.CB(self, games.screen.width * 3 / 4,
-                                   games.screen.height * 3 / 4 - 70, "l")
-            games.screen.add(self.cbl)
-            # right cornerback
-            self.cbr = fplayers.CB(game = self, x = games.screen.width / 4,
-                          y = games.screen.height * 3 / 4 - 70, side="r")
-            games.screen.add(self.cbr)
-            # safety 1
-            self.safety1 = fplayers.Safety(game=self, x=games.screen.width / 2 - 200,
-                                  y=games.screen.height * 3 / 4 - 275, num="1")
-            games.screen.add(self.safety1)
-            # safety 2
-            self.safety2 = fplayers.Safety(game=self, x=games.screen.width / 2 + 200,
-                                  y=games.screen.height * 3 / 4 - 275, num="2")
-            games.screen.add(self.safety2)
-
-            # center
-            self.center = fplayers.Center(self, games.screen.width / 2,
-                                          games.screen.height * 3 / 4)
-            games.screen.add(self.center)
-            # right guard 1
-            self.rol = fplayers.OL(game=self, x=games.screen.width / 2 + 40,
-                                   y=games.screen.height * 3 / 4, side="r")
-            games.screen.add(self.rol)
-            # right guard 2
-            self.rrol = fplayers.OL(game=self, x=games.screen.width / 2 + 80,
-                                    y=games.screen.height * 3 / 4, side="rr")
-            games.screen.add(self.rrol)
-            # left guard 1
-            self.lol = fplayers.OL(game=self, x=games.screen.width / 2 - 40,
-                                   y=games.screen.height * 3 / 4, side="l")
-            games.screen.add(self.lol)
-            # left guard 2
-            self.llol = fplayers.OL(game=self, x=games.screen.width / 2 - 80,
-                                    y=games.screen.height * 3 / 4, side="ll")
-            games.screen.add(self.llol)
-            # tight end
-            self.te1 = fplayers.TE(game=self, x=games.screen.width / 2 + 120,
-                                   y=games.screen.height * 3 / 4, num="1")
-            games.screen.add(self.te1)
-            # quarterback
-            self.qb = fplayers.QB(game=self, x=games.screen.width / 2,
-                                  y=games.screen.height * 3 / 4 + 50)
-            games.screen.add(self.qb)
-            # runningback
-            self.rb1 = fplayers.RB(game=self, x=games.screen.width / 2,
-                                   y=games.screen.height - 6, num="1")
-            games.screen.add(self.rb1)
-            # left wide recicver
-            self.wr1 = fplayers.WR(game=self, x=games.screen.width / 4,
-                                   y=games.screen.height * 3 / 4, side="l")
-            games.screen.add(self.wr1)
-            # right wide recicver
-            self.wr2 = fplayers.WR(game=self, x=games.screen.width * 3 / 4,
-                                   y=games.screen.height * 3 / 4, side="r")
-            games.screen.add(self.wr2)
-        else:
-            # linebacker
-            self.rlb = fplayers.LB(game=self, x=games.screen.width / 2 - 60,
-                                   y=games.screen.height * 3 / 4 - 70, side="r")
-            games.screen.add(self.rlb)
-            # linebacker
-            self.clb = fplayers.LB(game=self, x=games.screen.width / 2,
-                                   y=games.screen.height * 3 / 4 - 70, side="c")
-            games.screen.add(self.clb)
-            # linebacker
-            self.llb = fplayers.LB(game=self, x=games.screen.width / 2 + 60,
-                                   y=games.screen.height * 3 / 4 - 70, side="l")
-            games.screen.add(self.llb)
-            # left tackle 1
-            self.ltackle = fplayers.DL(game = self, x = games.screen.width / 2 + 40,
-                                  y = games.screen.height * 3 / 4 - 20, side = "l")
-            games.screen.add(self.ltackle)
-            # left tackle 2
-            self.lltackle = fplayers.DL(game = self, x = games.screen.width / 2 + 80,
-                                  y = games.screen.height * 3 / 4 - 20, side = "ll")
-            games.screen.add(self.lltackle)
-            # right tackle 1
-            self.rtackle = fplayers.DL(game = self, x = games.screen.width / 2 - 40,
-                                  y = games.screen.height * 3 / 4 - 20, side = "r")
-            games.screen.add(self.rtackle)
-            # right tackle 2
-            self.rrtackle = fplayers.DL(game = self, x = games.screen.width / 2 - 80,
-                                  y = games.screen.height * 3 / 4 - 20, side = "rr")
-            games.screen.add(self.rrtackle)
-            # left cornerback
-            self.cbl = fplayers.CB(game = self, x = games.screen.width * 3 / 4,
-                          y = games.screen.height * 3 / 4 - 70, side="l")
-            games.screen.add(self.cbl)
-            # right cornerback
-            self.cbr = fplayers.CB(game = self, x = games.screen.width / 4,
-                          y = games.screen.height * 3 / 4 - 70, side="r")
-            games.screen.add(self.cbr)
-            # safety 1
-            self.safety1 = fplayers.Safety(game=self, x=games.screen.width / 2 - 200,
-                                  y=games.screen.height * 3 / 4 - 275, num="1")
-            games.screen.add(self.safety1)
-            # safety 2
-            self.safety2 = fplayers.Safety(game=self, x=games.screen.width / 2 + 200,
-                                  y=games.screen.height * 3 / 4 - 275, num="2")
-            games.screen.add(self.safety2)
-
-            # center
-            self.center = fplayers.Center(game = self, x = games.screen.width / 2,
-                                 y = games.screen.height * 3 / 4)
-            games.screen.add(self.center)
-            # right guard 1
-            self.rol = fplayers.OL(game=self, x=games.screen.width / 2 + 40,
-                                   y=games.screen.height * 3 / 4, side="r")
-            games.screen.add(self.rol)
-            # right guard 2
-            self.rrol = fplayers.OL(game=self, x=games.screen.width / 2 + 80,
-                                    y=games.screen.height * 3 / 4, side="rr")
-            games.screen.add(self.rrol)
-            # left guard 1
-            self.lol = fplayers.OL(game=self, x=games.screen.width / 2 - 40,
-                                   y=games.screen.height * 3 / 4, side="l")
-            games.screen.add(self.lol)
-            # left guard 2
-            self.llol = fplayers.OL(game=self, x=games.screen.width / 2 - 80,
-                                    y=games.screen.height * 3 / 4, side="ll")
-            games.screen.add(self.llol)
-            # quarterback
-            self.qb = fplayers.QB(game=self, x=games.screen.width / 2,
-                                  y=games.screen.height * 3 / 4 + 50)
-            games.screen.add(self.qb)
-            # runningback
-            self.rb1 = fplayers.RB(game=self, x=games.screen.width / 2,
-                                   y=games.screen.height - 6, num="1")
-            games.screen.add(self.rb1)
-            # left wide recicver
-            self.wr1 = fplayers.WR(game=self, x=games.screen.width / 4,
-                                   y=games.screen.height * 3 / 4, side="l")
-            games.screen.add(self.wr1)
-            # right wide recicver
-            self.wr2 = fplayers.WR(game=self, x=games.screen.width * 3 / 4,
-                                   y=games.screen.height * 3 / 4, side="r")
-            games.screen.add(self.wr2)
+        # put circles on screen
+        for circle in self.circles:
+            circle.reveal()
 
         # elevate bar sprite and scoreboard sprites above all other sprites
         self.bar.elevate()
@@ -1196,7 +1299,14 @@ class Game(object):
         self.field.timer = Field.TIMER
         self.play_status = -1
         self.team1_offence = self.team1_half
+        if self.team1_offence:
+            self.o_controllers = self.team1_ctrls
+            self.d_controllers = self.team2_ctrls
+        else:
+            self.o_controllers = self.team2_ctrls
+            self.d_controllers = self.team1_ctrls
         self.down = 0
+        self.set_timeouts(0)
         self.for_first_down = 360
         self.line_of_scrimmage = 1083
         text = ftxt.Half_text(self, "Press Enter to continue", 60, ftxt.RED, 30,
@@ -1208,13 +1318,34 @@ class Game(object):
         self.field.timer = Field.TIMER
         self.play_status = -1
         self.down = 0
+        self.set_timeouts(0)
         self.for_first_down = 360
         self.line_of_scrimmage = 1083
         self.coin_toss()
 
+    def get_o_controller(self, index):
+        controller = self.o_controllers[index]
+        for player in self.o_players:
+            if player.controller == controller:
+                player.controller = None
+                break
+        return controller
+
+    def get_d_controller(self, index):
+        controller = self.d_controllers[index]
+        for player in self.d_players:
+            if player.controller == controller:
+                player.controller = None
+                break
+        return controller
+
     def change_offence(self):
         """ Changes the team that is on offence """
         self.team1_offence = not self.team1_offence
+        # swap controller lists
+        temp = self.o_controllers
+        self.o_controllers = self.d_controllers
+        self.d_controllers = temp
 
     def change_quarter(self):
         if self.quarter < 4:
@@ -1238,13 +1369,40 @@ class Game(object):
         with the value of 'string' """
         self.remove_players()
         self.sBoard.stop_clock()
-        self.play_status = 1
+        self.end_play(False)
         self.line_of_scrimmage -= 36 * yards
         self.for_first_down += 36 * yards
-        message = ftxt.Football_message(game=self, value=string,
-                                        x=games.screen.width / 2,
+        self.down -= 1
+        message = ftxt.Football_message(self, string, x=games.screen.width / 2,
                                         y=games.screen.height / 2)
         games.screen.add(message)
+
+    def call_timeout(self, team):
+        """ Call a timeout """
+        if team == self.team1:
+            if self.team1_to == 0:
+                return
+            else:
+                self.team1_to -= 1
+        elif team == self.team2:
+            if self.team2_to == 0:
+                return
+            else:
+                self.team2_to -= 1
+        self.remove_players()
+        self.sBoard.stop_clock()
+        self.timeout = True
+        self.field.reset_timer() # resets field's timer in case play_status is 1
+        if self.play_status == -1:
+            self.down -= 1
+        def func():
+            self.timeout = False
+            self.pick_play()
+        text = ftxt.Football_message(self, "Timeout: " + team,
+                                     x=games.screen.width / 2,
+                                     y=games.screen.height / 2, lifetime=150,
+                                     after_death=func)
+        games.screen.add(text)
 
     def view_replay(self):
         games.mouse.is_visible = True
@@ -1262,17 +1420,19 @@ class Game(object):
         for sprite in self.sprite_list:
             games.screen.add(sprite)
         del self.sprite_list
+        self.sBoard.play_clock.replay_reset()
+        self.sBoard.game_clock.replay_reset()
 
     def end_game(self):
         """ Method evoked at the end of the game """
         self.remove_players()
+        self.set_timeouts(0)
 
         # adjust the bar on the screen
         self.bar.reset()
 
         # adjust the field on the screen
-        self.field.x = games.screen.width / 2
-        self.field.y = games.screen.height / 2
+        self.field.center_adjust()
 
         data = shelve.open("football_data.dat", "w")
         tuple = data["names"][self.name1]
@@ -1295,66 +1455,96 @@ class Game(object):
         data["names"] = dict
         data.close()
 
-        text = ftxt.Text(game=self, value=string, size=100,
+        text = ftxt.Text(game=self, value=string, size=80,
                          color=ftxt.RED, x=games.screen.width / 2,
-                         y=games.screen.height / 2)
+                         top=50)
         games.screen.add(text)
 
         text = ftxt.Play_again_text(game=self, x=games.screen.width / 2,
                                     bottom=games.screen.height - 10)
         games.screen.add(text)
 
+        self.show_stats()
+
+    def show_stats(self):
+        text = ftxt.Text(self, "Stats", 70, ftxt.RED, x=games.screen.width / 2,
+                         top=150)
+        games.screen.add(text)
+
+        text = ftxt.Text(self, self.team1, 50, ftxt.RED,
+                         x=games.screen.width * .4, top=200)
+        games.screen.add(text)
+
+        text = ftxt.Text(self, self.team2, 50, ftxt.RED,
+                         x=games.screen.width * .6, top=200)
+        games.screen.add(text)
+
+        top = 250
+        strings = ("Int. Thrown", "Sacks Made")
+        for i in range(len(strings)):
+            text = ftxt.Text(self, strings[i], 50, ftxt.RED, left=50, top=top)
+            games.screen.add(text)
+            text = ftxt.Text(self, str(self.stats[i][0]), 50, ftxt.RED,
+                             x=games.screen.width * .4, top=top)
+            games.screen.add(text)
+            text = ftxt.Text(self, str(self.stats[i][1]), 50, ftxt.RED,
+                             x=games.screen.width * .6, top=top)
+            games.screen.add(text)
+            top += 50
+
     def reset_base_speeds(self):
-        fplayers.QB.base_speed = 5.5 + random.randrange(0, 2) / 10.0
-        fplayers.QB.base_speed1 = 5.5 + random.randrange(0, 2) / 10.0
-        fplayers.WR.base_speed = 5.5 + random.randrange(0, 3) / 10.0
-        fplayers.WR.base_speed1 = 5.5 + random.randrange(0, 3) / 10.0
-        fplayers.RB.base_speed = 5.6 + random.randrange(0, 2) / 10.0
-        fplayers.RB.base_speed1 = 5.6 + random.randrange(0, 2) / 10.0
-        fplayers.Center.base_speed = 5.5 + random.randrange(-3, 1) / 10.0
-        fplayers.Center.base_speed1 = 5.5 + random.randrange(-3, 1) / 10.0
-        fplayers.Center.block = 3 + random.randrange(0, 4)
-        fplayers.Center.block1 = 3 + random.randrange(0, 4)
-        fplayers.OL.base_speed = 5.5 + random.randrange(-3, 1) / 10.0
-        fplayers.OL.base_speed1 = 5.5 + random.randrange(-3, 1) / 10.0
-        fplayers.OL.block = 3 + random.randrange(0, 4)
-        fplayers.OL.block1 = 3 + random.randrange(0, 4)
-        fplayers.TE.base_speed = 5.5 + random.randrange(0, 2) / 10.0
-        fplayers.TE.base_speed1 = 5.5 + random.randrange(0, 2) / 10.0
-        fplayers.TE.block = 3 + random.randrange(0, 4)
-        fplayers.TE.block1 = 3 + random.randrange(0, 4)        
-        fplayers.Punter.base_speed = 5.5 + random.randrange(0, 2) / 10.0
-        fplayers.Punter.base_speed1 = 5.5 + random.randrange(0, 2) / 10.0
-        fplayers.STCenter.base_speed = 5.5 + random.randrange(0, 3) / 10.0
-        fplayers.STCenter.base_speed1 = 5.5 + random.randrange(0, 3) / 10.0
-        fplayers.STCenter.block = 3 + random.randrange(0, 4)
-        fplayers.STCenter.block1 = 3 + random.randrange(0, 4)
-        fplayers.STOL.base_speed = 5.5 + random.randrange(0, 3) / 10.0
-        fplayers.STOL.base_speed1 = 5.5 + random.randrange(0, 3) / 10.0
-        fplayers.STOL.block = 3 + random.randrange(0, 4)
-        fplayers.STOL.block1 = 3 + random.randrange(0, 4)
-        fplayers.DL.base_speed = 5.5 + random.randrange(-3, 1) / 10.0
-        fplayers.DL.base_speed1 = 5.5 + random.randrange(-3, 1) / 10.0
-        fplayers.LB.base_speed = 5.5 + random.randrange(-1, 2) / 10.0
-        fplayers.LB.base_speed1 = 5.5 + random.randrange(-1, 2) / 10.0
-        fplayers.CB.base_speed = 5.5 + random.randrange(0, 3) / 10.0
-        fplayers.CB.base_speed1 = 5.5 + random.randrange(0, 3) / 10.0
-        fplayers.Safety.base_speed = 5.5 + random.randrange(0, 3) / 10.0
-        fplayers.Safety.base_speed1 = 5.5 + random.randrange(0, 3) / 10.0
-        fplayers.Safety.base_speed2 = 5.5 + random.randrange(0, 3) / 10.0
-        fplayers.Safety.base_speed3 = 5.5 + random.randrange(0, 3) / 10.0
-        fplayers.STDL.base_speed = 5.5 + random.randrange(-3, 1) / 10.0
-        fplayers.STDL.base_speed1 = 5.5 + random.randrange(-3, 1) / 10.0
-        fplayers.STLB.base_speed = 5.5 + random.randrange(-1, 2) / 10.0
-        fplayers.STLB.base_speed1 = 5.5 + random.randrange(-1, 2) / 10.0
-        fplayers.PR.base_speed = 5.6 + random.randrange(0, 2) / 10.0
-        fplayers.PR.base_speed1 = 5.6 + random.randrange(0, 2) / 10.0
+        players.QB.base_speed = players.Basic_player.BASE_SPEED + random.randrange(0, 2) / 10.0
+        players.QB.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(0, 2) / 10.0
+        players.WR.base_speed = players.Basic_player.BASE_SPEED + random.randrange(0, 3) / 10.0
+        players.WR.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(0, 3) / 10.0
+        players.RB.base_speed = players.Basic_player.BASE_SPEED + random.randrange(1, 3) / 10.0
+        players.RB.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(1, 3) / 10.0
+        players.Center.base_speed = players.Basic_player.BASE_SPEED + random.randrange(-2, 1) / 10.0
+        players.Center.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(-2, 1) / 10.0
+        players.Center.block = 3 + random.randrange(0, 4)
+        players.Center.block1 = 3 + random.randrange(0, 4)
+        players.OL.base_speed = players.Basic_player.BASE_SPEED + random.randrange(-2, 1) / 10.0
+        players.OL.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(-2, 1) / 10.0
+        players.OL.block = 3 + random.randrange(0, 4)
+        players.OL.block1 = 3 + random.randrange(0, 4)
+        players.TE.base_speed = players.Basic_player.BASE_SPEED + random.randrange(0, 2) / 10.0
+        players.TE.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(0, 2) / 10.0
+        players.TE.block = 3 + random.randrange(0, 4)
+        players.TE.block1 = 3 + random.randrange(0, 4)        
+        players.Punter.base_speed = players.Basic_player.BASE_SPEED + random.randrange(0, 2) / 10.0
+        players.Punter.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(0, 2) / 10.0
+        players.Kicker.base_speed = players.Basic_player.BASE_SPEED + random.randrange(0, 2) / 10.0
+        players.Kicker.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(0, 2) / 10.0 
+        players.STCenter.base_speed = players.Basic_player.BASE_SPEED + random.randrange(0, 2) / 10.0
+        players.STCenter.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(0, 2) / 10.0
+        players.STCenter.block = 3 + random.randrange(0, 4)
+        players.STCenter.block1 = 3 + random.randrange(0, 4)
+        players.STOL.base_speed = players.Basic_player.BASE_SPEED + random.randrange(0, 2) / 10.0
+        players.STOL.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(0, 2) / 10.0
+        players.STOL.block = 3 + random.randrange(0, 4)
+        players.STOL.block1 = 3 + random.randrange(0, 4)
+        players.DL.base_speed = players.Basic_player.BASE_SPEED + random.randrange(-2, 1) / 10.0
+        players.DL.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(-2, 1) / 10.0
+        players.LB.base_speed = players.Basic_player.BASE_SPEED + random.randrange(-1, 2) / 10.0
+        players.LB.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(-1, 2) / 10.0
+        players.CB.base_speed = players.Basic_player.BASE_SPEED + random.randrange(0, 3) / 10.0
+        players.CB.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(0, 3) / 10.0
+        players.Safety.base_speed = players.Basic_player.BASE_SPEED + random.randrange(0, 3) / 10.0
+        players.Safety.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(0, 3) / 10.0
+        players.Safety.base_speed2 = players.Basic_player.BASE_SPEED + random.randrange(0, 3) / 10.0
+        players.Safety.base_speed3 = players.Basic_player.BASE_SPEED + random.randrange(0, 3) / 10.0
+        players.STDL.base_speed = players.Basic_player.BASE_SPEED + random.randrange(0, 2) / 10.0
+        players.STDL.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(0, 2) / 10.0
+        players.STLB.base_speed = players.Basic_player.BASE_SPEED + random.randrange(-1, 2) / 10.0
+        players.STLB.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(-1, 2) / 10.0
+        players.PR.base_speed = players.Basic_player.BASE_SPEED + random.randrange(1, 3) / 10.0
+        players.PR.base_speed1 = players.Basic_player.BASE_SPEED + random.randrange(1, 3) / 10.0
 
     def player_fatigue(self):
-        classes = (fplayers.QB, fplayers.WR, fplayers.RB, fplayers.Punter,
-                   fplayers.LB, fplayers.STLB, fplayers.CB, fplayers.Safety,
-                   fplayers.PR, fplayers.DL, fplayers.STDL, fplayers.Center,
-                   fplayers.OL, fplayers.STCenter, fplayers.STOL, fplayers.TE)
+        classes = (players.QB, players.WR, players.RB, players.Punter,
+                   players.LB, players.STLB, players.CB, players.Safety,
+                   players.PR, players.DL, players.STDL, players.Center,
+                   players.OL, players.STCenter, players.STOL, players.TE)
         for a_class in classes:
             if random.randrange(3) == 0:
                 a_class.base_speed -= .1
@@ -1397,8 +1587,13 @@ class Game(object):
         top = 10
         number = 1
         for name in names:
-            text = ftxt.Text(self, name + ": " + str(data["names"][name][0]) + "-" + str(data["names"][name][1]) + "-" + str(data["names"][name][2]),
-                             25, ftxt.WHITE, left=left, top=top)
+            w, l, t = data["names"][name]
+            value = name + ": " + str(w) + "-" + str(l) + "-" + str(t) + "   "
+            total = w + l + t
+            if total != 0:
+                string = str((float(w) / total) * 100)
+                value += "(" + string[:string.index(".") + 2] + "%)"
+            text = ftxt.Text(self, value, 30, ftxt.WHITE, left=left, top=top)
             games.screen.add(text)
             top = text.bottom + 10
             if number == 20:
@@ -1424,6 +1619,8 @@ class Game(object):
         for sprite in games.screen.all_objects:
             if sprite not in self.do_not_destroy:
                 sprite.destroy()
+        for circle in self.circles:
+            games.screen.remove(circle)
 
     def get_game_length(self):
         return self.game_length
@@ -1431,9 +1628,34 @@ class Game(object):
     def get_sound_set(self):
         return self.sound_set
 
+class Master(object):
+    def __init__(self):
+        self.joysticks = []
+        self.check_joysticks()
+        self.init_joysticks()
+        self.start_game()
+        games.screen.mainloop()
+
+    def check_joysticks(self):
+        if pygame.joystick.get_count() < 2:
+            text = ftxt.Joystick_check(self, 2)
+            games.screen.add(text)
+            games.screen.mainloop()
+            if pygame.joystick.get_count() == 0:  # if no joysticks user wants
+                sys.exit(1)                       # to exit
+
+    def init_joysticks(self):
+        self.joysticks = []
+        for i in range(pygame.joystick.get_count()):
+            jstick = pygame.joystick.Joystick(i)
+            jstick.init()
+            self.joysticks.append(jstick)
+
+    def start_game(self):
+        game = Game(self)
+
 def main():
-    football = Game()
-    games.screen.mainloop()
+    master = Master()
 
 # run program
 main()

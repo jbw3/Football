@@ -3,8 +3,9 @@
 # This module contains all of the Text sprites needed for 'Football.py'
 
 # imports
-from livewires import games
-import time, shelve
+import games
+import shelve
+pygame = games.pygame
 
 # colors for text objects
 BLUE = (0, 0, 200)
@@ -228,9 +229,9 @@ class Ask_text(games.Text):
                 if sprite != self and sprite != self.game.set_text and sprite != self.game.exit_text and sprite != self.game.back_text and sprite != self.game.records_text:
                     sprite.destroy()
 
-            text = Confirm_text(game = self.game, value = "Confirm",
-                                size = 30, color1 = WHITE, color2 = GREEN,
-                                left = 10, top = 10)
+            text = Confirm_text(game=self.game, value="Confirm",
+                                size=30, color1=WHITE, color2=GREEN,
+                                left=10, top=10)
             games.screen.add(text)
 
             self.game.back_text.left = text.right + 10
@@ -498,12 +499,22 @@ class Side_text(Click_text):
         if self.value == "No":
             self.game.team1_offence = not self.game.team1_offence
         self.game.team1_half = not self.game.team1_offence
+        if self.game.team1_offence:
+            self.game.o_controllers = self.game.team1_ctrls
+            self.game.d_controllers = self.game.team2_ctrls
+        else:
+            self.game.o_controllers = self.game.team2_ctrls
+            self.game.d_controllers = self.game.team1_ctrls
 
         for text in self.game.texts:
             text.destroy()
         del self.game.texts
 
         games.mouse.is_visible = False
+        if self.game.quarter == 1:
+            self.game.set_timeouts(3)
+        else:
+            self.game.set_timeouts(2)
         self.game.pick_play()
 
 class Play_text(games.Text):
@@ -518,54 +529,28 @@ class Play_text(games.Text):
             color = BLUE
         super(Play_text, self).__init__(value=value, size=75, color=color,
                                         x=games.screen.width / 2,
-                                        y=games.screen.height / 2,
+                                        y=games.screen.height * .33,
                                         is_collideable=False)
 
         self.game.non_activated_sprites.append(self)
 
     def update(self):
-        if games.keyboard.is_pressed(games.K_F1):
+        if games.keyboard.is_pressed(games.K_F1) and self.game.replay_list != []:
             self.game.view_replay()
             return
 
-        if games.keyboard.is_pressed(games.K_q) and self.game.blitz == 0:
-            if games.keyboard.is_pressed(games.K_LSHIFT):
-                if games.keyboard.is_pressed(games.K_LCTRL):
-                    self.game.blitz = 4
-                else:
+        if self.game.blitz == 0:
+            for controller in self.game.d_controllers:
+                if controller.get_hat(0)[0] == 1:
+                    self.game.blitz = 3
+                elif controller.get_hat(0)[0] == -1:
                     self.game.blitz = 2
-            elif games.keyboard.is_pressed(games.K_LCTRL):
-                self.game.blitz = 3
-            else:
-                self.game.blitz = 1
+                elif controller.get_hat(0)[1] == 1:
+                    self.game.blitz = 1
+                elif controller.get_hat(0)[1] == -1:
+                    self.game.blitz = 4
 
-        if games.keyboard.is_pressed(games.K_0):
-            self.game.play_num = 0
-            self.game.new_play()
-            self.destroy()
-        elif games.keyboard.is_pressed(games.K_1):
-            self.game.play_num = 1
-            self.game.new_play()
-            self.destroy()
-        elif games.keyboard.is_pressed(games.K_2):
-            self.game.play_num = 2
-            self.game.new_play()
-            self.destroy()
-        elif games.keyboard.is_pressed(games.K_3):
-            self.game.play_num = 3
-            self.game.new_play()
-            self.destroy()
-        elif games.keyboard.is_pressed(games.K_4):
-            self.game.play_num = 4
-            self.game.new_play()
-            self.destroy()
-        elif games.keyboard.is_pressed(games.K_5):
-            self.game.play_num = 5
-            self.game.new_play()
-            self.destroy()
-        elif games.keyboard.is_pressed(games.K_6):
-            self.game.play_num = 6
-            self.game.new_play()
+        if self.game.play_num != None:
             self.destroy()
 
     def destroy(self):
@@ -575,10 +560,68 @@ class Play_text(games.Text):
             pass
         super(Play_text, self).destroy()
 
+class Play_sprite(games.Sprite):
+    """ For use with 'Play_selector' """
+    SPEED = 35
+    def __init__(self, image, x, y):
+        super(Play_sprite, self).__init__(image, x=x, y=y, is_collideable=False)
+        self.xshift = 0
+
+    def update(self):
+        if self.xshift != 0:
+            shift = min(abs(self.xshift), Play_sprite.SPEED)
+            if self.xshift < 0:
+                shift = -shift
+            self.xshift -= shift
+            self.x -= shift
+
+class Play_selector(games.Sprite):
+    BUFFER = 350
+    MIN_DIF = .25
+    def __init__(self, game, images, controller, y, index=0):
+        super(Play_selector, self).__init__(games.load_image("images\\play_selector.bmp"),
+                                            x=games.screen.width/2, y=y)
+        games.screen.add(self)
+        self.game = game
+        self.index = 0
+        self.controller = controller
+        if type(images[0]) == type(""):
+            images = games.load_animation(images)
+        self.sprites = []
+        x = games.screen.width / 2 - self.index * Play_selector.BUFFER
+        for image in images:
+            sprite = Play_sprite(image, x, self.y)
+            games.screen.add(sprite)
+            self.sprites.append(sprite)
+            x += Play_selector.BUFFER
+
+    def update(self):
+        if self.controller.get_axis(0) > Play_selector.MIN_DIF:
+            self.scroll(1)
+        elif self.controller.get_axis(0) < -Play_selector.MIN_DIF:
+            self.scroll(-1)
+        if self.controller.get_button(0):
+            self.game.play_num = self.index
+            self.game.new_play()
+            self.destroy()
+
+    def scroll(self, direction):
+        direction = direction / abs(direction)
+        if self.sprites[0].xshift == 0 and ((direction == -1 and self.index > 0) or (direction == 1 and self.index < len(self.sprites)-1)):
+            self.index += direction
+            for sprite in self.sprites:
+                sprite.xshift = direction * Play_selector.BUFFER
+
+    def destroy(self):
+        for sprite in self.sprites:
+            sprite.destroy()
+        super(Play_selector, self).destroy()
+
 class Half_text(Blink_text):
     def update(self):
         super(Half_text, self).update()
         if games.keyboard.is_pressed(games.K_RETURN) or games.keyboard.is_pressed(games.K_KP_ENTER):
+            self.game.set_timeouts(3)
             self.game.sBoard.reset_clock()
             self.game.sBoard.update_quarter()
             self.game.pick_play()
@@ -634,36 +677,39 @@ class Score(games.Text):
 class Downs_text(games.Text):
     def __init__(self, game):
         self.game = game
-        super(Downs_text, self).__init__(value = "1st & 10", size = 30,
-                                         color = RED,
-                                         right = games.screen.width - 10,
-                                         top = 5, is_collideable = False)
+        super(Downs_text, self).__init__("1st & 10", 30, RED,
+                                         right=games.screen.width - 10,
+                                         top=5, is_collideable=False)
 
         self.game.non_activated_sprites.append(self)
         self.game.do_not_destroy.append(self)
 
     def update_downs(self):
-        if self.game.down == 1:
-            string = "1st"
-        elif self.game.down == 2:
-            string = "2nd"
-        elif self.game.down == 3:
-            string = "3rd"
-        elif self.game.down == 4:
-            string = "4th"
-        string += " & "
-        if self.game.field.bottom - self.game.line_of_scrimmage - 360 - self.game.for_first_down <= self.game.field.top + 360:
-            string += "goal"
+        if self.game.extra_point:
+            string = "Ex. Point"
         else:
-            if int(self.game.for_first_down / 36) == 0:
-                string += "inches"
+            if self.game.down == 1:
+                string = "1st"
+            elif self.game.down == 2:
+                string = "2nd"
+            elif self.game.down == 3:
+                string = "3rd"
+            elif self.game.down == 4:
+                string = "4th"
+            string += " & "
+            if self.game.field.bottom - self.game.line_of_scrimmage - self.game.field.VPAD - self.game.for_first_down <= self.game.field.top + self.game.field.VPAD:
+                string += "Goal"
             else:
-                string += str(int(self.game.for_first_down / 36))
-        self.set_value(string)
+                if int(self.game.for_first_down / 36) == 0:
+                    string += "Inches"
+                else:
+                    string += str(int(self.game.for_first_down / 36))
+        self.value = string
         self.right = games.screen.width - 10
         self.top = 5
 
 class Game_clock(games.Text):
+    """ The clock that displays how much time is left in the current quarter """
     def __init__(self, game, length):
         self.game = game
         if length == 60:
@@ -682,7 +728,8 @@ class Game_clock(games.Text):
         self.is_running = False
         self.minutes = self.start_min
         self.seconds = self.start_sec
-        self.time_second = time.localtime()[5]
+        self.last_millisec = pygame.time.get_ticks()
+        self.millisec = 0
         self.ended_game = False
 
         if len(str(self.seconds)) < 2:
@@ -699,19 +746,22 @@ class Game_clock(games.Text):
 
     def update(self):
         if self.is_running:
-            if self.time_second != time.localtime()[5]:
+            self.millisec += pygame.time.get_ticks() - self.last_millisec
+            while self.millisec >= 1000:
                 if self.seconds == 0:
                     if self.minutes == 0:
                         self.stop()
+                        break
                     else:
                         self.minutes -= 1
                         self.seconds = 59
                 else:
                     self.seconds -= 1
-                self.time_second = time.localtime()[5]
-                self.update_value()
+                self.millisec -= 1000
+            self.update_value()
+        self.last_millisec = pygame.time.get_ticks()
 
-        if self.minutes == 0 and self.seconds == 0 and not self.game.play_status == 0 and self.game.sBoard.quarter_text.value != "Halftime":
+        if self.minutes == 0 and self.seconds == 0 and not self.game.play_status == 0 and not self.game.extra_point and self.game.sBoard.quarter_text.value != "Halftime":
             self.game.change_quarter()
 
         if self.game_is_over() and not self.ended_game:
@@ -739,6 +789,7 @@ class Game_clock(games.Text):
         self.is_running = False
         self.minutes = self.start_min
         self.seconds = self.start_sec
+        self.millisec = 0
         if len(str(self.seconds)) < 2:
             sec_str = "0" + str(self.seconds)
         else:
@@ -747,39 +798,44 @@ class Game_clock(games.Text):
         self.x = games.screen.width / 2
         self.top = 10
 
+    def replay_reset(self):
+        """ Called after replay has been viewed Keeps clock from calculating
+            the time during the replay """
+        self.last_millisec = pygame.time.get_ticks()
+
     def game_is_over(self):
-        return (self.minutes == 0 and self.seconds == 0 and ((self.game.quarter == 4 and self.game.team1_score != self.game.team2_score) or self.game.quarter > 4) and not self.game.play_status == 0) or (self.game.quarter == 5 and self.game.team1_score != self.game.team2_score)
+        return (self.minutes == 0 and self.seconds == 0 and not self.game.extra_point and ((self.game.quarter == 4 and self.game.team1_score != self.game.team2_score) or self.game.quarter > 4) and not self.game.play_status == 0) or (self.game.quarter == 5 and self.game.team1_score != self.game.team2_score)
 
 class Play_clock(games.Text):
     def __init__(self, game, top):
         self.game = game
         self.set_top = top
-        super(Play_clock, self).__init__(value = ":25", size = 30,
-                                         color = RED,
-                                         x = games.screen.width / 2,
-                                         top = top,
-                                         is_collideable = False)
+        super(Play_clock, self).__init__(value=":25", size=30, color=RED,
+                                         x=games.screen.width / 2, top=top,
+                                         is_collideable=False)
 
         self.game.non_activated_sprites.append(self)
 
-        self.time_second = time.localtime()[5]
+        self.last_millisec = pygame.time.get_ticks()
+        self.millisec = 0
         self.seconds = 25
 
     def update(self):
-        if self.game.sBoard.quarter_text.value == "Game Finished":
+        if self.game.sBoard.quarter_text.value == "Game Finished" or self.game.play_status == 0:
             self.destroy()
+            return
 
-        if self.time_second != time.localtime()[5]:
-            self.time_second = time.localtime()[5]
-            self.seconds -= 1
+        self.millisec += pygame.time.get_ticks() - self.last_millisec
+        if self.millisec >= 1000:
+            self.seconds -= self.millisec / 1000
+            self.millisec %= 1000
             self.update_value()
+        self.last_millisec = pygame.time.get_ticks()
 
-        if self.seconds == 0:
-            self.game.down -= 1
-            self.game.penalize(yards=5, string="Delay of game")
-            self.destroy()
-
-        if self.game.play_status == 0:
+        if self.seconds <= 0:
+            self.game.penalize(5, "Delay of game")
+            if self.game.center != None:
+                self.game.center.can_snap = False
             self.destroy()
 
     def update_value(self):
@@ -791,11 +847,17 @@ class Play_clock(games.Text):
         self.x = games.screen.width / 2
         self.top = self.set_top
 
+    def replay_reset(self):
+        """ Called after replay has been viewed. Keeps clock from calculating
+            the time during the replay """
+        self.last_millisec = pygame.time.get_ticks()
+
     def destroy(self):
         try:
             self.game.non_activated_sprites.remove(self)
         except(ValueError):
             pass
+        self.game.sBoard.play_clock = None
         super(Play_clock, self).destroy()
 
 class Quarter_text(games.Text):
@@ -825,6 +887,21 @@ class Quarter_text(games.Text):
 
         self.x = games.screen.width * 3 / 4
         self.top = 5
+
+class Joystick_check(games.Text):
+    def __init__(self, master, min_count):
+        self.master = master
+        self.min_count = min_count
+        super(Joystick_check, self).__init__(
+            "You do not have enough game controllers plugged in", 50, RED,
+            x=games.screen.width / 2, y=games.screen.height / 2, interval=25)
+
+    def tick(self):
+        pygame.joystick.quit()
+        pygame.joystick.init()
+        if pygame.joystick.get_count() >= self.min_count:
+            self.destroy()
+            games.screen.quit()
 
 # Message class used in game
 class Football_message(games.Message):
