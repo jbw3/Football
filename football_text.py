@@ -13,8 +13,48 @@ red = (210, 0, 0, 0)
 white = (255, 255, 255, 0)
 yellow = (240, 240, 0, 0)
 
+# Base text class
+class Click_text(games.Text):
+    def __init__(self, game, value, size, color1, color2, x = 0, y = 0,
+                 top = None, bottom = None, right = None, left = None,
+                 is_collideable = False, color_func1 = None, color_func2 = None):
+        """ Initializes object """
+        super(Click_text, self).__init__(value = value, size = size, color = color1,
+                                         x = x, y = y, top = top, bottom = bottom,
+                                         right = right, left = left,
+                                         is_collideable = is_collideable)
+        self.game = game
+        self.color1 = color1
+        self.color2 = color2
+        self.color_func1 = color_func1
+        self.color_func2 = color_func2
 
-# Text classes
+        self.game.non_activated_sprites.append(self)
+        self.game.do_not_destroy.append(self)
+
+    def update(self):
+        """
+        Checks to see if mouse is over self. If so, it changes color to
+        self.color2. If mouse button 0 is pressed, then func() is executed.
+        """
+        if self.color_func1:
+            self.color1 = self.color_func1()
+        if self.color_func2:
+            self.color2 = self.color_func2()
+
+        if self.left < games.mouse.x < self.right and self.top < games.mouse.y < self.bottom:
+            self.set_color(self.color2)
+            if games.mouse.is_pressed(0):
+                self.func()
+
+        else:
+            self.set_color(self.color1)
+
+    def func(self):
+        """ Method invoked if self is clicked on """
+        pass
+
+# Text classes used in football game
 class Text(games.Text):
     """ A text object """
     def __init__(self, game, value, size, color, x = 0, y = 0,
@@ -54,12 +94,14 @@ class Ask_text(games.Text):
                 if sprite != self:
                     sprite.destroy()
 
-            text = Confirm_text(game = self.game, value = "Confirm", left = 10,
-                                top = 10)
+            text = Confirm_text(game = self.game, value = "Confirm",
+                                size = 30, color1 = white, color2 = green,
+                                left = 10, top = 10)
             games.screen.add(text)
 
-            text = Cancel_text(game = self.game, value = "Cancel", left = 100,
-                               top = 10)
+            text = Cancel_text(game = self.game, value = "Cancel",
+                               size = 30, color1 = white, color2 = red,
+                               left = 100, top = 10)
             games.screen.add(text)
 
             text = Text(game = self.game, value = "Player 1 - " + self.game.team1,
@@ -73,92 +115,50 @@ class Ask_text(games.Text):
 
             self.destroy()
 
-class Confirm_text(games.Text):
+class Confirm_text(Click_text):
     """ A text object that starts the game if the players have picked the
         teams they want"""
-    def __init__(self, game, value, left, top):
-        """ Initializes object """
-        super(Confirm_text, self).__init__(value = value, size = 30,
-                 color = white, left = left, top = top,
-                is_collideable = False)
-
-        self.game = game
-
     def update(self):
         """ Lets players confirm the teams they picked """
         if games.keyboard.is_pressed(games.K_RETURN) or games.keyboard.is_pressed(games.K_KP_ENTER):
             self.game.start()
 
-        if self.left < games.mouse.x < self.right and self.top < games.mouse.y < self.bottom:
-            self.set_color(green)
-            if games.mouse.is_pressed(0):
-                self.game.start()
+        super(Confirm_text, self).update()
 
-        else:
-            self.set_color(white)
+    def func(self):
+        self.game.start()
 
-class Cancel_text(Confirm_text):
+class Cancel_text(Click_text):
     """ A text object that lets the players go back and repick their teams """
     def update(self):
         """ Lets players repick their teams """
         if games.keyboard.is_pressed(games.K_BACKSPACE):
-            self.cancel()
+            self.func()
 
-        if self.left < games.mouse.x < self.right and self.top < games.mouse.y < self.bottom:
-            self.set_color(red)
-            if games.mouse.is_pressed(0):
-                self.cancel()
+        super(Cancel_text, self).update()
 
-        else:
-            self.set_color(white)
-
-    def cancel(self):
+    def func(self):
         self.game.team1 = ""
         self.game.team2 = ""
         self.game.pick_teams()        
 
-class Change_text(games.Text):
-    """ Text that changes color when the mouse pointer is on it """
-    def __init__(self, game, value, size, left, top):
-        super(Change_text, self).__init__(value = value, size = size,
-                                    color = white, left = left, top = top,
-                                    is_collideable = False)
-        self.game = game
+class Change_text(Click_text):
+    def func(self):
+        if not self.game.team1:
+            self.game.team1 = self.get_value()
+        elif not self.game.team2:
+            if not self.game.team1 == self.get_value():
+                self.game.team2 = self.get_value()
 
-    def update(self):
-        if self.left < games.mouse.x < self.right and self.top < games.mouse.y < self.bottom:
-            self.set_color(self.game.ask_text.get_color())
-            if games.mouse.is_pressed(0):
-                if not self.game.team1:
-                    self.game.team1 = self.get_value()
-                elif not self.game.team2:
-                    if not self.game.team1 == self.get_value():
-                        self.game.team2 = self.get_value()
-
-        else:
-            self.set_color(white)
-
-class Settings_text(games.Text):
+class Settings_text(Click_text):
     """ Text sprite that allows user to access the game settings """
-    def __init__(self, game):
-        super(Settings_text, self).__init__(value = "Settings", size = 30,
-                                            color = white,
-                                            right = games.screen.width - 10,
-                                            top = 10, is_collideable = False)
-        self.game = game
+    def func(self):
+        self.game.show_settings()
 
-    def update(self):
-        if self.left < games.mouse.x < self.right and self.top < games.mouse.y < self.bottom:
-            self.set_color(gray)
-            if games.mouse.is_pressed(0):
-                self.game.show_settings()
-
-        else:
-            self.set_color(white)
-
-class Clock_settings(games.Text):
+class Clock_settings(Click_text):
     def __init__(self, game):
         self.game = game
+        self.can_change = True
         if self.game.clock_rate == 1:
             self.index = 0
         elif self.game.clock_rate == 2:
@@ -170,53 +170,55 @@ class Clock_settings(games.Text):
 
         self.options = (("1 hour", 1), ("30 min", 2), ("15 min", 4), ("5 min", 12))
 
-        super(Clock_settings, self).__init__(value = "Length of game: " + self.options[self.index][0],
-                                             size = 40, color = white, left = 10,
-                                             top = 10,
-                                             is_collideable = False)        
+        super(Clock_settings, self).__init__(game = self.game,
+                                             value = "Length of game: " + self.options[self.index][0],
+                                             size = 40, color1 = white,
+                                             color2 = gray, left = 10, top = 10)        
 
     def update(self):
-        if self.left < games.mouse.x < self.right and self.top < games.mouse.y < self.bottom:
-            self.set_color(gray)
-            if games.mouse.is_pressed(0):
-                if self.can_change:
-                    self.index += 1
+        if not games.mouse.is_pressed(0):
+            self.can_change = True
 
-                    if self.index > 3:
-                        self.index = 0
-                    elif self.index < 0:
-                        self.index = 3
+        super(Clock_settings, self).update()
 
-                    self.game.clock_rate = self.options[self.index][1]
-                    self.set_value("Length of game: " + self.options[self.index][0])
-                    self.top = 10
-                    self.left = 10
+    def func(self):
+        if self.can_change:
+            self.index += 1
 
-                    self.can_change = False
+            if self.index > 3:
+                self.index = 0
+            elif self.index < 0:
+                self.index = 3
 
-            else:
-                self.can_change = True
+            self.game.clock_rate = self.options[self.index][1]
+            self.set_value("Length of game: " + self.options[self.index][0])
+            self.top = 10
+            self.left = 10
 
-        else:
-            self.set_color(white)
+            self.can_change = False
 
-class Settings_exit(games.Text):
+class Settings_exit(Click_text):
     def __init__(self, game):
-        super(Settings_exit, self).__init__(value = "Exit settings",
-                                             size = 40, color = white,
-                                             right = games.screen.width - 10,
-                                             bottom = games.screen.height - 10,
-                                             is_collideable = False)
-        self.game = game
+        super(Settings_exit, self).__init__(game = game,
+                                            value = "Exit settings",
+                                            size = 40, color1 = white,
+                                            color2 = red,
+                                            right = games.screen.width - 10,
+                                            bottom = games.screen.height - 10)
 
-    def update(self):
-        if self.left < games.mouse.x < self.right and self.top < games.mouse.y < self.bottom:
-            self.set_color(red)
-            if games.mouse.is_pressed(0):
-                self.game.pick_teams()
+    def func(self):
+        self.game.pick_teams()
 
-        else:
-            self.set_color(white)
+class Game_exit(Click_text):
+    def __init__(self, game):
+        super(Game_exit, self).__init__(game = game, value = "Exit",
+                                        size = 40, color1 = white,
+                                        color2 = red,
+                                        left = 20,
+                                        bottom = games.screen.height - 20)
+
+    def func(self):
+        games.screen.quit()
 
 class Play_text(games.Text):
     def __init__(self, game):
@@ -370,6 +372,48 @@ class Game_clock(games.Text):
         self.x = games.screen.width / 2
         self.top = 10
 
+class Play_clock(games.Text):
+    def __init__(self, game):
+        self.game = game
+        super(Play_clock, self).__init__(value = ":25", size = 30,
+                                         color = red,
+                                         x = games.screen.width / 2,
+                                         top = self.game.game_clock.bottom + 10,
+                                         is_collideable = False)
+
+        self.game.non_activated_sprites.append(self)
+        self.game.do_not_destroy.append(self)
+
+        self.ONE_SECOND = 45
+
+        self.timer = self.ONE_SECOND
+        self.seconds = 25
+        self.string = ""
+
+    def update(self):
+        if self.timer > 0:
+            self.timer -= 1
+        else:
+            self.seconds -= 1
+            self.timer = self.ONE_SECOND
+            self.update_value()
+
+        if self.seconds == 0:
+            self.game.penalize(yards = 5, string = "Delay of game")
+            self.destroy()
+
+        if self.game.play_is_running:
+            self.destroy()
+
+    def update_value(self):
+        self.string = ":"
+        if self.seconds < 10:
+            self.string += "0"
+        self.string += str(self.seconds)
+        self.set_value(self.string)
+        self.x = games.screen.width / 2
+        self.top = self.game.game_clock.bottom + 10
+
 class Quarter_text(games.Text):
     def __init__(self, game):
         self.game = game
@@ -400,4 +444,33 @@ class Quarter_text(games.Text):
 
         self.x = games.screen.width * 3 / 4
         self.top = 10
-        
+
+# Message class used in game
+class Football_message(games.Message):
+    def __init__(self, game, value, size = 120, color = red,
+                 x = 0,
+                 y = 0, top = None, bottom = None, left = None, right = None,
+                 lifetime = 125, is_collideable = False, after_death = None):
+        super(Football_message, self).__init__(value = value, size = size,
+                                               color = color,
+                                               x = x, y = y, top = top,
+                                               bottom = bottom, left = left,
+                                               right = right, lifetime = lifetime,
+                                               is_collideable = is_collideable,
+                                               after_death = after_death)
+        self.game = game
+
+        self.game.non_activated_sprites.append(self)
+        self.game.do_not_destroy.append(self)
+
+################################################################################
+################################################################################
+
+if __name__ == "__main__":
+    print \
+"""
+This is a module designed for a football game. It contains all of Text
+objects needed for the game.
+"""
+    raw_input("\n\nPress the enter key to exit.")
+    

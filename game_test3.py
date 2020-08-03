@@ -5,13 +5,8 @@
 # controlled by the computer.
 #
 # To do:
-#
-# 1. take out variable ball_incomplete
-# 2. make players return to their position after play is over
-# 3. move list of plays to Game object
-# 4. see if QB.five_pressed can be deleted
-#
-# Note: Noseguard movement problem might be in Basic_defence
+# 1. move list of plays
+# 2. see if QB.five_pressed can be deleted
 
 # imports
 from livewires import games
@@ -21,6 +16,7 @@ import football_text as ftxt
 # initialize screen
 games.init(screen_width = 1020, screen_height = 706, fps = 50)
 
+### classes ###
 class Adjuster(games.Sprite):
     """ Moves object to make it look like activated object is moving """
     def update(self):
@@ -45,21 +41,50 @@ class Basic_player(Adjuster1):
     def turn(self, angle):
         """ Rotate sprite """
         self.angle += angle
-        for player in self.game.players:
-            if self.overlaps(player) and player != self:
-                if player.top < self.top < player.bottom:
-                    self.top = player.bottom
-                if player.bottom > self.bottom > player.top:
-                    self.bottom = player.top
-                if player.right > self.right > player.left:
-                    self.right = player.left
-                if player.left < self.left < player.right:
-                    self.left = player.right
 
     def adjust(self):
         """ Calculate sprites x_change and y_change """
-        self.x_change = self.speed * math.sin(math.radians(self.angle))
-        self.y_change = self.speed * -math.cos(math.radians(self.angle))
+        self.x_move = True
+        self.y_move = True
+        for sprite in self.overlapping_sprites:
+            if sprite in self.game.players:
+                if self.direction == "+":
+                    if sprite.y - 2 < self.top < sprite.bottom:
+                        if 270 < self.angle < 360 or 0 <= self.angle < 90:
+                            self.y_move = False
+                    elif sprite.y + 2 > self.bottom > sprite.top:
+                        if 90 < self.angle < 270:
+                            self.y_move = False
+                    elif sprite.x > self.right > sprite.left:
+                        if 0 < self.angle < 180:
+                            self.x_move = False
+                    elif sprite.x < self.left < sprite.right:
+                        if 180 < self.angle < 360:
+                            self.x_move = False
+                else:
+                    if sprite.y - 2 < self.top < sprite.bottom:
+                        if 90 < self.angle < 270:
+                            self.y_move = False
+                    elif sprite.y + 2 > self.bottom > sprite.top:
+                        if 270 < self.angle < 360 or 0 <= self.angle < 90:
+                            self.y_move = False
+                    elif sprite.x > self.right > sprite.left:
+                        if 180 < self.angle < 360:
+                            self.x_move = False                        
+                    elif sprite.x < self.left < sprite.right:
+                        if 0 < self.angle < 180:
+                            self.x_move = False
+
+        if self.x_move:
+            self.x_change = self.speed * math.sin(math.radians(self.angle))
+        else:
+            self.x_change = 0
+
+        if self.y_move:
+            self.y_change = self.speed * -math.cos(math.radians(self.angle))
+        else:
+            self.y_change = 0
+
         if self.direction == "-":
             self.x_change = -self.x_change
             self.y_change = -self.y_change
@@ -74,12 +99,64 @@ class Basic_player(Adjuster1):
 
     def move(self):
         """ Moves sprite """
+        self.x_move = True
+        self.y_move = True
+        for sprite in self.overlapping_sprites:
+            if sprite in self.game.players:
+                self.overlap_func()
+                if sprite.has_ball:
+                    if self in self.game.o_players and sprite in self.game.d_players:
+                        self.tackle(sprite)
+                        self.x_move = False
+                        self.y_move = False
+                        break
+                    elif self in self.game.d_players and sprite in self.game.o_players:
+                        self.tackle(sprite)
+                        self.x_move = False
+                        self.y_move = False
+                        break
+
+                if self.direction == "+":
+                    if sprite.top < self.top < sprite.bottom:
+                        if 270 < self.angle < 360 or 0 <= self.angle < 90:
+                            self.y_move = False
+                            self.top = sprite.bottom
+                    elif sprite.bottom > self.bottom > sprite.top:
+                        if 90 < self.angle < 270:
+                            self.y_move = False
+                            self.bottom = sprite.top
+                    elif sprite.x > self.right > sprite.left:
+                        if 0 < self.angle < 180:
+                            self.x_move = False
+                            self.right = sprite.left
+                    elif sprite.x < self.left < sprite.right:
+                        if 180 < self.angle < 360:
+                            self.x_move = False
+                            self.left = sprite.right
+                else:
+                    if sprite.top < self.top < sprite.bottom:
+                        if 90 < self.angle < 270:
+                            self.y_move = False
+                    elif sprite.bottom > self.bottom > sprite.top:
+                        if 270 < self.angle < 360 or 0 <= self.angle < 90:
+                            self.y_move = False
+                    elif sprite.x > self.right > sprite.left:
+                        if 180 < self.angle < 360:
+                            self.x_move = False                        
+                    elif sprite.x < self.left < sprite.right:
+                        if 0 < self.angle < 180:
+                            self.x_move = False
+
         if self.direction == "+":
-            self.x += self.speed * math.sin(math.radians(self.angle))
-            self.y += self.speed * -math.cos(math.radians(self.angle))
+            if self.x_move:
+                self.x += self.speed * math.sin(math.radians(self.angle))
+            if self.y_move:
+                self.y += self.speed * -math.cos(math.radians(self.angle))
         else:
-            self.x -= self.speed * math.sin(math.radians(self.angle))
-            self.y -= self.speed * -math.cos(math.radians(self.angle))
+            if self.x_move:
+                self.x -= self.speed * math.sin(math.radians(self.angle))
+            if self.y_move:
+                self.y -= self.speed * -math.cos(math.radians(self.angle))
 
         # set image
         if self.has_ball:
@@ -89,12 +166,29 @@ class Basic_player(Adjuster1):
             if self.get_image() not in self.running_i2:
                 self.images = self.running_i2
 
-        self.do_not_overlap()
-
     def slide(self, amount):
         """ Moves sprite to the left or right """
-        self.x += amount * math.sin(math.radians(self.angle - 90))
-        self.y += amount * -math.cos(math.radians(self.angle - 90))
+        self.x_move = True
+        self.y_move = True
+        for sprite in self.overlapping_sprites:
+            if sprite in self.game.players:
+                if amount < 0:
+                    if sprite.top < self.top < sprite.bottom:
+                        self.y_move = False
+                    if sprite.bottom > self.bottom > sprite.top:
+                        self.y_move = False
+                    if sprite.left < self.left < sprite.right:
+                        self.x_move = False
+                    if sprite.right > self.right > sprite.left:
+                        self.x_move = False
+
+        if self.x_move:
+            self.x -= amount * math.sin(math.radians(self.angle - 90))
+        if self.y_move:
+            self.y -= amount * -math.cos(math.radians(self.angle - 90))
+
+    def overlap_func(self):
+        pass
 
 class Basic_offence(Basic_player):
     """ Basic moves for an offincive player """
@@ -150,8 +244,15 @@ class Basic_offence(Basic_player):
                             self.images = self.standing_i
 
                 else:
-                    # move sprite
-                    self.move()
+                    for player in self.game.d_players:
+                        if player.has_ball:
+                            self.angle = 90 + math.degrees(math.atan2(player.y - self.y, player.x - self.x))
+                            break
+
+                    if self.speed != 0:
+                        # move sprite
+                        self.direction = "+"
+                        self.move()
 
                     # get Adjuster1's update method
                     super(Basic_offence, self).update()
@@ -182,6 +283,9 @@ class Basic_offence(Basic_player):
         self.y_change = 0
         player.images = player.tackled_i
         self.images = self.tackled_i
+        self.game.change_offence()
+        self.game.down = 0
+        self.game.line_of_scrimmage = 3600 - self.game.line_of_scrimmage
 
 class Basic_defense(Basic_player):
     def update(self):
@@ -243,7 +347,8 @@ class Field(Adjuster):
 
     def update(self):
         if not self.game.is_paused:
-            super(Field, self).update()
+            if self.game.play_is_running:
+                super(Field, self).update()
 
         if self.game.game_clock.minutes == 0 and self.game.game_clock.seconds == 0 and self.game.quarter_text > 4 and not self.game.play_is_running:
             self.game.play_is_over = True
@@ -275,6 +380,11 @@ class Field(Adjuster):
                     self.game.score.update_score()
                     self.game.down = 0
                     self.game.game_clock.stop()
+                    message = ftxt.Football_message(game = self.game,
+                                                    x = games.screen.width / 2,
+                                                    y = games.screen.height / 2,
+                                                    value = "Touchdown!")
+                    games.screen.add(message)
                     self.game.change_offence()
 
             for sprite in self.game.d_players:
@@ -290,6 +400,23 @@ class Field(Adjuster):
                     self.game.score.update_score()
                     self.game.down = 0
                     self.game.game_clock.stop()
+                    message = ftxt.Football_message(game = self.game,
+                                                    x = games.screen.width / 2,
+                                                    y = games.screen.height / 2,
+                                                    value = "Touchdown!")
+                    games.screen.add(message)
+
+            for player in self.game.players:
+                if player.has_ball:
+                    if player.x < self.left or player.x > self.right:
+                        self.game.game_clock.stop()
+                        self.game.for_first_down -= self.bottom - self.game.line_of_scrimmage - 360 - player.y
+                        self.game.line_of_scrimmage = self.bottom - player.y - 360
+                        self.game.play_is_running = False
+                        self.game.play_is_over = True
+                        player.is_activated = False
+                        player.x_change = 0
+                        player.y_change = 0
 
 class Football(games.Animation):
     """ The football """
@@ -342,6 +469,13 @@ class Football(games.Animation):
                             if sprite in self.game.players and sprite != self.game.qb and sprite not in self.game.can_not_catch:
                                 sprite.is_activated = True
                                 sprite.has_ball = True
+                                self.game.qb.football = False
+                                if sprite in self.game.d_players:
+                                    message = ftxt.Football_message(game = self.game,
+                                                    x = games.screen.width / 2,
+                                                    y = games.screen.height / 2,
+                                                    value = "Interception!")
+                                    games.screen.add(message)
                                 self.destroy()
 
                 elif self.play == "hike":
@@ -431,6 +565,8 @@ class QB(Basic_offence):
         self.x_change = 0
         self.y_change = 0
         self.speed = 0
+        self.x_move = True
+        self.y_move = True
         if self.game.team1_offence:
             self.speed_w = QB.SPEED / 2
             self.speed_r = QB.SPEED
@@ -438,6 +574,7 @@ class QB(Basic_offence):
             self.speed_w = QB.SPEED2 / 2
             self.speed_r = QB.SPEED2
         self.direction = "+"
+        self.football = False
 
     def update(self):
         if not self.game.is_paused:
@@ -534,6 +671,8 @@ class WR(Basic_offence):
         self.x_change = 0
         self.y_change = 0
         self.speed = 0
+        self.x_move = True
+        self.y_move = True
         if self.game.team1_offence:
             self.speed_w = WR.SPEED / 2
             self.speed_r = WR.SPEED
@@ -586,6 +725,9 @@ class WR(Basic_offence):
         # get Basic_offence's update method
         super(WR, self).update()
 
+    def overlap_func(self):
+        self.slide(-self.speed_w)
+
 class Center(Basic_offence):
     """ The center """
     SPEED = 5 + random.randrange(-3, 1) / 10.0
@@ -624,7 +766,7 @@ class Center(Basic_offence):
                 self.standing_i2 = [games.load_image("titans_c_a(wb).bmp")]
                 self.running_i = [games.load_image("titans_c_a(wb).bmp")]
                 self.running_i2 = [games.load_image("titans_c_a(wb).bmp")]
-                self.tackled_i = []
+                self.tackled_i = [games.load_image("titans_c_a_t1.bmp")]
 
         super(Center, self).__init__(images = self.standing_i2,
                                  x = x, y = y, repeat_interval = 9,
@@ -639,6 +781,8 @@ class Center(Basic_offence):
         self.x_change = 0
         self.y_change = 0
         self.speed = 0
+        self.x_move = True
+        self.y_move = True
         if self.game.team1_offence:
             self.speed_w = Center.SPEED / 2
             self.speed_r = Center.SPEED
@@ -658,9 +802,7 @@ class Center(Basic_offence):
                     self.can_snap = False
 
             if self.game.play_is_running:
-                self.speed = self.speed_r
                 self.angle = 90 + math.degrees(math.atan2(self.game.noseg.y - self.y, self.game.noseg.x - self.x))
-                self.move()
 
         super(Center, self).update()
 
@@ -723,6 +865,8 @@ class Noseguard(Basic_defense):
         self.x_change = 0
         self.y_change = 0
         self.speed = 0
+        self.x_move = True
+        self.y_move = True
         if self.game.team1_offence:
             self.speed_w = Noseguard.SPEED / 2
             self.speed_r = Noseguard.SPEED
@@ -746,6 +890,9 @@ class Noseguard(Basic_defense):
             
         # get Basic_defense's update method
         super(Noseguard, self).update()
+
+    def overlap_func(self):
+        self.slide(-self.speed_w)
 
 class Safety(Basic_defense):
     SPEED = 5 + random.randrange(0, 3) / 10.0
@@ -804,6 +951,9 @@ class Safety(Basic_defense):
         self.x_change = 0
         self.y_change = 0
         self.speed = 0
+        self.x_move = True
+        self.y_move = True
+        self.tracking = False
         if self.game.team1_offence:
             self.speed_w = Safety.SPEED / 2
             self.speed_r = Safety.SPEED
@@ -816,33 +966,55 @@ class Safety(Basic_defense):
         if not self.game.is_paused:
             if not self.is_activated:
                 if self.game.play_is_running:
-                    if self.has_ball:
-                        pass
-                    else:
-                        if self.game.qb.has_ball:
-                            if self.game.qb.y < self.game.field.bottom - self.game.line_of_scrimmage - 360:
-                                self.angle = 90 + math.degrees(math.atan2(self.game.qb.y - self.y, self.game.qb.x - self.x))
-                                self.speed = self.speed_r
-                            else:
-                                self.speed = 0
-                                self.angle = 180
-                                if 270 < self.game.qb.angle < 345 and self.x > self.game.field.left + 800:
-                                    self.slide(-2)
-                                elif 15 < self.game.qb.angle < 90 and self.x < self.game.field.right - 800:
-                                    self.slide(2)
-                                elif self.game.qb.angle >= 345 or self.game.qb.angle <= 15:
-                                    if self.x > (self.game.field.right - self.game.field.left) / 2 + self.game.field.left + 1:
-                                        self.slide(-2)
-                                    elif self.x < (self.game.field.right - self.game.field.left) / 2 + self.game.field.left - 1:
-                                        self.slide(2)
-
+                    if self.game.qb.has_ball:
+                        if self.game.qb.y < self.game.field.bottom - self.game.line_of_scrimmage - 360:
+                            self.angle = 90 + math.degrees(math.atan2(self.game.qb.y - self.y, self.game.qb.x - self.x))
+                            self.speed = self.speed_r
                         else:
-                            for sprite in self.game.players:
-                                if sprite.has_ball:
+                            self.speed = 0
+                            self.angle = 180
+                            if 270 < self.game.qb.angle < 345 and self.x > self.game.qb.x - 200:
+                                self.slide(self.speed_w)
+                            elif 15 < self.game.qb.angle < 90 and self.x < self.game.qb.x + 200:
+                                self.slide(-self.speed_w)
+                            elif self.game.qb.angle >= 345 or self.game.qb.angle <= 15:
+                                if self.x > self.game.qb.x + 1:
+                                    self.slide(self.speed_w)
+                                elif self.x < self.game.qb.x - 1:
+                                    self.slide(-self.speed_w)
+                            else:
+                                if self.game.qb.x > self.x and self.x < self.game.field.right - 600:
+                                    self.slide(-self.speed_w)
+                                elif self.game.qb.x < self.x and self.x > self.game.field.left + 600:
+                                    self.slide(self.speed_w)
+
+                    else:
+                        for sprite in self.game.players:
+                            if sprite.has_ball:
+                                if sprite.y < self.game.field.bottom - self.game.line_of_scrimmage - 360:
+                                    self.tracking = True
+                                if self.tracking:
                                     self.angle = 90 + math.degrees(math.atan2(sprite.y - self.y, sprite.x - self.x))
                                     self.speed = self.speed_r
+                                    break
+                        else:
+                            if self.game.qb.football:
+                                self.angle = 90 + math.degrees(math.atan2(self.game.qb.football.y - self.y, self.game.qb.football.x - self.x))
+                                self.speed = self.speed_r
                 else:
                     self.speed = 0
+
+            else:
+                if self.has_ball:
+                    self.speed = self.speed_r
+                    self.direction = "+"
+                    self.adjust()
+                    if self.angle < 178:
+                        self.angle += 3
+                    elif self.angle > 182:
+                        self.angle -= 3
+                    else:
+                        self.angle = 180
 
         # get Basic_defense's update method
         super(Safety, self).update()
@@ -881,19 +1053,39 @@ class Game(object):
         games.screen.clear()
 
         # add text sprites to get the teams the players want to be
-        self.set_text = ftxt.Settings_text(game = self)
-        games.screen.add(self.set_text)        
+        self.set_text = ftxt.Settings_text(game = self, value = "Settings",
+                                           size = 30, color1 = ftxt.white,
+                                           color2 = ftxt.gray,
+                                           right = games.screen.width - 10,
+                                           top = 10)
+        games.screen.add(self.set_text)
+
         self.ask_text = ftxt.Ask_text(game = self, value = "Player 1, what team do you want?",
                     size = 30, color = ftxt.yellow, left = 10, top = 10)
         games.screen.add(self.ask_text)
+
         text = ftxt.Change_text(game = self, value = "Titans",
-                    size = 25, left = 10, top = 40)
+                                size = 25, color1 = ftxt.white,
+                                color2 = self.ask_text.get_color(),
+                                color_func2 = self.ask_text.get_color,
+                                left = 10, top = 40)
         games.screen.add(text)
+
         text = ftxt.Change_text(game = self, value = "Colts",
-                    size = 25, left = 10, top = 70)
+                                size = 25, color1 = ftxt.white,
+                                color2 = self.ask_text.get_color(),
+                                color_func2 = self.ask_text.get_color,
+                                left = 10, top = 70)
         games.screen.add(text)
+
         text = ftxt.Change_text(game = self, value = "Patriots",
-                    size = 25, left = 10, top = 100)
+                                size = 25, color1 = ftxt.white,
+                                color2 = self.ask_text.get_color(),
+                                color_func2 = self.ask_text.get_color,
+                                left = 10, top = 100)
+        games.screen.add(text)
+
+        text = ftxt.Game_exit(game = self)
         games.screen.add(text)
 
     def start(self):
@@ -959,6 +1151,9 @@ class Game(object):
         text = ftxt.Play_text(game = self)
         games.screen.add(text)
 
+        text = ftxt.Play_clock(game = self)
+        games.screen.add(text)
+
     def new_play(self):
         self.play_is_running = False
         self.play_is_over = False
@@ -1003,6 +1198,16 @@ class Game(object):
         else:
             self.team1_offence = True
 
+    def penalize(self, yards, string):
+        self.remove_players()
+        self.game_clock.stop()
+        self.play_is_over = True
+        self.line_of_scrimmage -= 36 * yards
+        message = ftxt.Football_message(game = self, value = string,
+                                        x = games.screen.width / 2,
+                                        y = games.screen.height / 2)
+        games.screen.add(message)
+
     def end_game(self):
         for sprite in games.screen.all_objects:
             if sprite not in self.do_not_destroy:
@@ -1032,6 +1237,11 @@ class Game(object):
 
         text = ftxt.Settings_exit(game = self)
         games.screen.add(text)
+
+    def remove_players(self):
+        for sprite in games.screen.all_objects:
+            if sprite not in self.do_not_destroy:
+                sprite.destroy()
 
 def main():
     football = Game()
