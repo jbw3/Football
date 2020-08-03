@@ -5,7 +5,7 @@
 # imports
 from livewires import games
 
-# colors
+# colors for text objects
 blue = (0, 0, 200, 0)
 gray = (175, 175, 175, 0)
 green = (0, 200, 0, 0)
@@ -54,6 +54,41 @@ class Click_text(games.Text):
         """ Method invoked if self is clicked on """
         pass
 
+    def destroy(self):
+        try:
+            self.game.non_activated_sprites.remove(self)
+        except(ValueError):
+            pass
+        try:
+            self.game.do_not_destroy.remove(self)
+        except(ValueError):
+            pass
+        super(Click_text, self).destroy()
+
+class Blink_text(games.Text):
+    def __init__(self, game, value, size, color, rate, x = 0, y = 0,
+                 top = None, bottom = None, right = None, left = None,
+                 is_collideable = False):
+        super(Blink_text, self).__init__(value = value, size = size,
+                                         color = color, x = x, y = y,
+                                         top = top, bottom = bottom,
+                                         right = right, left = left,
+                                         is_collideable = is_collideable)
+        self.game = game
+        self.rate = rate
+        self.timer = rate
+        self.value1 = value
+
+    def update(self):
+        if self.timer > 0:
+            self.timer -= 1
+        else:
+            self.timer = self.rate
+            if self.value == self.value1:
+                self.set_value("")
+            else:
+                self.set_value(self.value1)
+
 # Text classes used in football game
 class Text(games.Text):
     """ A text object """
@@ -68,6 +103,17 @@ class Text(games.Text):
 
         self.game.non_activated_sprites.append(self)
         self.game.do_not_destroy.append(self)
+
+    def destroy(self):
+        try:
+            self.game.non_activated_sprites.remove(self)
+        except(ValueError):
+            pass
+        try:
+            self.game.do_not_destroy.remove(self)
+        except(ValueError):
+            pass
+        super(Text, self).destroy()
 
 class Ask_text(games.Text):
     """ Text object that gits the names of the teams the players want to be """
@@ -91,7 +137,7 @@ class Ask_text(games.Text):
 
         else:
             for sprite in games.screen.get_all_objects():
-                if sprite != self:
+                if sprite != self and sprite != self.game.set_text and sprite != self.game.exit_text:
                     sprite.destroy()
 
             text = Confirm_text(game = self.game, value = "Confirm",
@@ -114,6 +160,7 @@ class Ask_text(games.Text):
             games.screen.add(text)
 
             self.destroy()
+            
 
 class Confirm_text(Click_text):
     """ A text object that starts the game if the players have picked the
@@ -150,8 +197,29 @@ class Change_text(Click_text):
             if not self.game.team1 == self.get_value():
                 self.game.team2 = self.get_value()
 
+class Play_again_text(Blink_text):
+    def __init__(self, game, x = 0, y = 0, top = None, bottom = None,
+                 right = None, left = None):
+        super(Play_again_text, self).__init__(game = game,
+                                              value = "Press Enter to continue",
+                                              size = 50, color = red, rate = 30,
+                                              x = x, y = y, top = top,
+                                              bottom = bottom, right = right,
+                                              left = left)
+
+    def update(self):
+        super(Play_again_text, self).update()
+        if games.keyboard.is_pressed(games.K_RETURN) or games.keyboard.is_pressed(games.K_KP_ENTER):
+            self.game.set_variables()
+            self.game.pick_teams()
+
 class Settings_text(Click_text):
     """ Text sprite that allows user to access the game settings """
+    def update(self):
+        super(Settings_text, self).update()
+        if games.keyboard.is_pressed(games.K_F1):
+            self.func()
+
     def func(self):
         self.game.show_settings()
 
@@ -168,7 +236,8 @@ class Clock_settings(Click_text):
         elif self.game.clock_rate == 12:
             self.index = 3
 
-        self.options = (("1 hour", 1), ("30 min", 2), ("15 min", 4), ("5 min", 12))
+        self.options = (("1 hour", 1), ("30 min", 2), ("15 min", 4),
+                        ("5 min", 12))
 
         super(Clock_settings, self).__init__(game = self.game,
                                              value = "Length of game: " + self.options[self.index][0],
@@ -193,6 +262,40 @@ class Clock_settings(Click_text):
             self.game.clock_rate = self.options[self.index][1]
             self.set_value("Length of game: " + self.options[self.index][0])
             self.top = 10
+            self.left = 10
+
+            self.can_change = False
+
+class Sound_settings(Click_text):
+    def __init__(self, game):
+        self.options = (("ON", True), ("OFF", False))
+        self.can_change = True
+        if game.sound_set:
+            self.index = 0
+        else:
+            self.index = 1
+        super(Sound_settings, self).__init__(game = game,
+                                             value = "Sound: " + self.options[self.index][0],
+                                             size = 40, color1 = white,
+                                             color2 = gray, left = 10,
+                                             top = game.c_settings.bottom + 10)
+
+    def update(self):
+        if not games.mouse.is_pressed(0):
+            self.can_change = True
+
+        super(Sound_settings, self).update()
+
+    def func(self):
+        if self.can_change:
+            if self.index == 0:
+                self.index = 1
+            else:
+                self.index = 0
+
+            self.game.sound_set = self.options[self.index][1]
+            self.set_value("Sound: " + self.options[self.index][0])
+            self.top = self.game.c_settings.bottom + 10
             self.left = 10
 
             self.can_change = False
@@ -239,10 +342,6 @@ class Play_text(games.Text):
         self.game.non_activated_sprites.append(self)
 
     def update(self):
-        if games.keyboard.is_pressed(games.K_0):
-            self.game.play_num = 0
-            self.game.new_play()
-            self.destroy()
         if games.keyboard.is_pressed(games.K_1):
             self.game.play_num = 1
             self.game.new_play()
@@ -255,6 +354,24 @@ class Play_text(games.Text):
             self.game.play_num = 3
             self.game.new_play()
             self.destroy()
+        if games.keyboard.is_pressed(games.K_4):
+            self.game.play_num = 4
+            self.game.new_play()
+            self.destroy()
+        if games.keyboard.is_pressed(games.K_5):
+            self.game.play_num = 5
+            self.game.new_play()
+            self.destroy()
+
+        if games.keyboard.is_pressed(games.K_q):
+            self.game.blitz = True
+
+    def destroy(self):
+        try:
+            self.game.non_activated_sprites.remove(self)
+        except(ValueError):
+            pass
+        super(Play_text, self).destroy()
 
 # scoreboard text objects
 class Score(games.Text):
@@ -262,7 +379,7 @@ class Score(games.Text):
         self.game = game
         super(Score, self).__init__(
         value = self.game.team1 + ": 0     " + self.game.team2 + ": 0",
-            size = 30, color = red, left = 10, top = 10, is_collideable = False)
+            size = 30, color = red, left = 10, top = 5, is_collideable = False)
 
         self.game.non_activated_sprites.append(self)
         self.game.do_not_destroy.append(self)
@@ -270,7 +387,7 @@ class Score(games.Text):
     def update_score(self):
         self.set_value(self.game.team1 + ": " + str(self.game.team1_score) + "     " + self.game.team2 + ": " + str(self.game.team2_score))
         self.left = 10
-        self.top = 10
+        self.top = 5
 
 class Downs_text(games.Text):
     def __init__(self, game):
@@ -278,7 +395,7 @@ class Downs_text(games.Text):
         super(Downs_text, self).__init__(value = "Down: 1", size = 30,
                                          color = red,
                                          right = games.screen.width - 10,
-                                         top = 10, is_collideable = False)
+                                         top = 5, is_collideable = False)
 
         self.game.non_activated_sprites.append(self)
         self.game.do_not_destroy.append(self)
@@ -286,7 +403,7 @@ class Downs_text(games.Text):
     def update_downs(self):
         self.set_value("Down: " + str(self.game.down))
         self.right = games.screen.width - 10
-        self.top = 10
+        self.top = 5
 
 class Game_clock(games.Text):
     def __init__(self, game, rate):
@@ -294,7 +411,7 @@ class Game_clock(games.Text):
         super(Game_clock, self).__init__(value = "15:00", size = 30,
                                          color = red,
                                          x = games.screen.width / 2,
-                                         top = 10, is_collideable = False)
+                                         top = 5, is_collideable = False)
 
         self.game.non_activated_sprites.append(self)
         self.game.do_not_destroy.append(self)
@@ -323,7 +440,7 @@ class Game_clock(games.Text):
                 if self.minutes == 0:
                     self.is_running = False
                     self.game.quarter += 1
-                    self.game.quarter_text.update_value()
+                    self.game.sBoard.update_quarter()
                     if self.game.quarter <= 4:
                         self.reset()
                 else:
@@ -351,7 +468,7 @@ class Game_clock(games.Text):
 
         self.set_value(self.min_str + ":" + self.sec_str)
         self.x = games.screen.width / 2
-        self.top = 10
+        self.top = 5
 
     def start(self):
         if self.minutes > 0 or self.seconds > 0:
@@ -373,24 +490,26 @@ class Game_clock(games.Text):
         self.top = 10
 
 class Play_clock(games.Text):
-    def __init__(self, game):
+    def __init__(self, game, top):
         self.game = game
+        self.set_top = top
         super(Play_clock, self).__init__(value = ":25", size = 30,
                                          color = red,
                                          x = games.screen.width / 2,
-                                         top = self.game.game_clock.bottom + 10,
+                                         top = top,
                                          is_collideable = False)
 
         self.game.non_activated_sprites.append(self)
-        self.game.do_not_destroy.append(self)
 
         self.ONE_SECOND = 45
 
         self.timer = self.ONE_SECOND
         self.seconds = 25
-        self.string = ""
 
     def update(self):
+        if self.game.sBoard.quarter_text.value == "Game Finished":
+            self.destroy()
+
         if self.timer > 0:
             self.timer -= 1
         else:
@@ -406,13 +525,20 @@ class Play_clock(games.Text):
             self.destroy()
 
     def update_value(self):
-        self.string = ":"
+        string = ":"
         if self.seconds < 10:
-            self.string += "0"
-        self.string += str(self.seconds)
-        self.set_value(self.string)
+            string += "0"
+        string += str(self.seconds)
+        self.set_value(string)
         self.x = games.screen.width / 2
-        self.top = self.game.game_clock.bottom + 10
+        self.top = self.set_top
+
+    def destroy(self):
+        try:
+            self.game.non_activated_sprites.remove(self)
+        except(ValueError):
+            pass
+        super(Play_clock, self).destroy()
 
 class Quarter_text(games.Text):
     def __init__(self, game):
@@ -420,37 +546,38 @@ class Quarter_text(games.Text):
         super(Quarter_text, self).__init__(value = "1st Quarter", size = 30,
                                          color = red,
                                          x = games.screen.width * 3 / 4,
-                                         top = 10, is_collideable = False)
-
-        self.string = ""
+                                         top = 5, is_collideable = False)
 
         self.game.non_activated_sprites.append(self)
         self.game.do_not_destroy.append(self)
 
     def update_value(self):
         if self.game.quarter == 2:
-            self.string = "2nd"
+            string = "2nd"
         elif self.game.quarter == 3:
-            self.string = "3rd"
+            string = "3rd"
         elif self.game.quarter == 4:
-            self.string = "4th"
+            string = "4th"
         elif self.game.quarter > 4:
-            self.string = "Game Finished"
+            string = "Game Finished"
 
-        if self.string != "Game Finished":
-            self.string += " Quarter"
+        if string != "Game Finished":
+            string += " Quarter"
 
-        self.set_value(self.string)
+        self.set_value(string)
 
         self.x = games.screen.width * 3 / 4
-        self.top = 10
+        self.top = 5
 
 # Message class used in game
 class Football_message(games.Message):
+    previous = None
     def __init__(self, game, value, size = 120, color = red,
                  x = 0,
                  y = 0, top = None, bottom = None, left = None, right = None,
                  lifetime = 125, is_collideable = False, after_death = None):
+        if Football_message.previous != None:
+            Football_message.previous.destroy()
         super(Football_message, self).__init__(value = value, size = size,
                                                color = color,
                                                x = x, y = y, top = top,
@@ -458,10 +585,17 @@ class Football_message(games.Message):
                                                right = right, lifetime = lifetime,
                                                is_collideable = is_collideable,
                                                after_death = after_death)
+        Football_message.previous = self
         self.game = game
 
         self.game.non_activated_sprites.append(self)
-        self.game.do_not_destroy.append(self)
+
+    def destroy(self):
+        try:
+            self.game.non_activated_sprites.remove(self)
+        except(ValueError):
+            pass
+        super(Football_message, self).destroy()
 
 ################################################################################
 ################################################################################
