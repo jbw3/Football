@@ -1,16 +1,80 @@
-# Football Text
+# Football Players
 #
 # This module contains all of the player objects needed for 'Football.py'
+
+# info list:
+# [qb, rb1, rb2, rb3, wr1, wr2, wr3, wr4, wr5, lt, lg, c, rt, rg, te1, te2, p,
+#  stwr1, stwr2, stol1, stol2, stol3, stc, stol4, stol5, stol6, stol7, dl1, dl2,
+#  dl3, dl4, dl5, lb1, lb2, lb3, cb1, cb2, s1, s2, stdl1, stdl2, stdl3, stdl4,
+#  stdl5, stlb1, stlb2, stlb3, stlb4, stcb1, stcb2, pr]
+# len: 51
 
 # imports
 from livewires import games
 import math, random, football_text as ftxt
 
+class Shadow(games.Sprite):
+    def __init__(self, sprite, xoffset=0, yoffset=0, halfarc=None,
+                 midarcxoffset=None, midarcyoffset=None, txoffset=0,
+                 tyoffset=0):
+        super(Shadow, self).__init__(self.change_image(sprite.image),
+                                     sprite.angle, sprite.x + xoffset,
+                                     sprite.y + yoffset, is_collideable=False)
+
+        self.sprite = sprite
+        self.xoffset = xoffset
+        self.yoffset = yoffset
+        self.halfarc = halfarc
+        self.midarcxoffset = midarcxoffset
+        self.midarcyoffset = midarcyoffset
+        self.has_traveled = 0
+        self.past_half = False
+        self.mxoffset = xoffset
+        self.myoffset = yoffset
+        self.txoffset = txoffset
+        self.tyoffset = tyoffset
+
+    def change_image(self, image):
+        image = image.convert()
+        for x in range(image.get_width()):
+            for y in range(image.get_height()):
+                if image.get_at((x, y)) != image.get_colorkey():
+                    image.set_at((x, y), (0, 0, 0))
+        image.set_alpha(150)
+        return image
+
+    def update_position(self):
+        if self.halfarc != None and self.has_traveled >= 0:
+            if self.past_half == False:
+                self.has_traveled += math.sqrt(abs(self.x-self.sprite.x-self.xoffset)**2 + abs(self.y-self.sprite.y-self.yoffset)**2)
+            else:
+                self.has_traveled -= math.sqrt(abs(self.x-self.sprite.x-self.xoffset)**2 + abs(self.y-self.sprite.y-self.yoffset)**2)
+            if self.has_traveled > self.halfarc:
+                self.past_half = True
+            if self.halfarc != None:
+                self.xoffset = (self.has_traveled / self.halfarc) * self.midarcxoffset
+                self.yoffset = (self.has_traveled / self.halfarc) * self.midarcyoffset
+
+        self.x = self.sprite.x + self.xoffset
+        self.y = self.sprite.y + self.yoffset
+        self.angle = self.sprite.angle
+
+    def tackle_data(self):
+        self.image = self.change_image(self.sprite.image)
+        self.xoffset = self.txoffset
+        self.yoffset = self.tyoffset
+
+    def main_data(self):
+        self.image = self.change_image(self.sprite.image)
+        self.xoffset = self.mxoffset
+        self.yoffset = self.myoffset
+
 class Football(games.Animation):
     """ The football """
-    def __init__(self, play, game, x, y, angle, to_go=0):
+    def __init__(self, player, play, x, y, angle, to_go=0):
         """ Initializes object """
-        self.game = game
+        self.player = player
+        self.game = player.game
         self.play = play
         self.to_go = to_go
         self.loop = True
@@ -21,9 +85,9 @@ class Football(games.Animation):
                       "images\\football3.bmp",
                       "images\\football3.bmp",
                       "images\\football4.bmp"]
-            self.to_go = self.game.bar.right * 3
+            self.to_go = self.game.bar.length * 2
             interval = 2
-            self.speed = 7
+            self.speed = 8
             
         elif self.play == "hike":
             images = ["images\\football1.bmp"]
@@ -54,20 +118,26 @@ class Football(games.Animation):
                        "images\\football7.bmp",
                        "images\\football8.bmp",
                        "images\\football9.bmp"]
+            self.to_go = self.game.bar.length * 2
             interval = 1
             self.speed = 8
 
         self.x_change = self.speed * math.sin(math.radians(angle))
         self.y_change = self.speed * -math.cos(math.radians(angle))
 
-        super(Football, self).__init__(images=images, x=x, y=y,
-                                       angle=angle, repeat_interval=interval,
-                                       n_repeats=0)
+        super(Football, self).__init__(images, angle, x, y,
+                                       repeat_interval=interval, n_repeats=0)
 
     def update(self):
         if self.loop:
+            if self.bottom < self.game.field.bottom - self.game.line_of_scrimmage - 360:
+                self.game.passed_line = True
+
+            if self.player and (not self.overlaps(self.player) or self.play == "bounce"):
+                self.player = None
+
             if self.play == "pass":
-                self.to_go -= 7
+                self.to_go -= self.speed
                 if self.to_go <= 0:
                     self.x_change = 0
                     self.y_change = 0
@@ -86,23 +156,15 @@ class Football(games.Animation):
                 # check to see if self overlaps a football player
                 if not self.game.ball_incomplete:
                     for sprite in self.overlapping_sprites:
-                        if sprite in self.game.players and sprite != self.game.qb and sprite not in self.game.can_not_catch:
-                            self.game.ball_carrier = sprite
-                            if sprite in self.game.d_players:
-                                message = ftxt.Football_message(game = self.game,
-                                                x = games.screen.width / 2,
-                                                y = games.screen.height / 2,
-                                                value = "Interception!")
-                                games.screen.add(message)
-                            self.destroy()
+                        if sprite in self.game.players and sprite != self.game.qb:
+                            sprite.ball_overlap(self)
 
             elif self.play == "hike":
                 self.x += self.x_change
                 self.y += self.y_change
                 for sprite in self.overlapping_sprites:
                     if sprite in self.game.players and sprite != self.game.center:
-                        self.game.ball_carrier = sprite
-                        self.destroy()
+                        sprite.ball_overlap(self)
 
             elif self.play == "bounce":
                 if self.to_go > 0:
@@ -120,9 +182,8 @@ class Football(games.Animation):
                     self.images = [games.load_image("images\\football1.bmp")]
 
                 for sprite in self.overlapping_sprites:
-                    if sprite in self.game.players and not sprite.tackled:
-                        self.game.ball_carrier = sprite
-                        self.destroy()
+                    if sprite in self.game.players:
+                        sprite.ball_overlap(self)
 
             elif self.play == "punt":
                 if self.to_go > 0:
@@ -169,18 +230,10 @@ class Football(games.Animation):
                     elif self.speed == 4:
                         self.images = [games.load_image("images\\football1.bmp")]
 
-                if self.speed < 8 or self.to_go <= 16:
+                if self.speed < 8:
                     for sprite in self.overlapping_sprites:
-                        if not sprite.tackled:
-                            if sprite in self.game.d_players:
-                                self.game.ball_carrier = sprite
-                            else:
-                                self.game.for_first_down = 360
-                                self.game.line_of_scrimmage = 3600 - (self.game.field.bottom - sprite.y - 360)
-                                self.game.play_status = 1
-                                self.game.down = 0
-                                self.game.change_offence()
-                            self.destroy()
+                        if sprite in self.game.players:
+                            sprite.ball_overlap(self)
 
 class Arms(games.Animation):
     """ The arms of a football player """
@@ -195,15 +248,20 @@ class Arms(games.Animation):
         else:
             interval = 14
 
-        super(Arms, self).__init__(images = images,
-                                   x = self.player.x + self.xshift * math.sin(math.radians(self.player.angle + self.angshift + 90)),
-                                   y = self.player.y + self.xshift * -math.cos(math.radians(self.player.angle + self.angshift + 90)),
-                                   angle = self.player.angle + self.angshift,
-                                   repeat_interval = interval,
-                                   n_repeats = 0,
-                                   is_collideable = is_collideable)
+        super(Arms, self).__init__(images=images,
+                                   x=self.player.x + self.xshift * math.sin(math.radians(self.player.angle + self.angshift + 90)),
+                                   y=self.player.y + self.xshift * -math.cos(math.radians(self.player.angle + self.angshift + 90)),
+                                   angle=self.player.angle + self.angshift,
+                                   repeat_interval=interval,
+                                   n_repeats=0,
+                                   is_collideable=is_collideable)
         games.screen.add(self)
         self.lower(self.player)
+
+        if self.command == "hold ball":
+            self.shadow = Shadow(self, 2, 3)
+            games.screen.add(self.shadow)
+            self.shadow.elevate(self.player.game.field)
 
         self.player.game.non_activated_sprites.append(self) # 'Arms' object will move with the player it is attached to
 
@@ -226,11 +284,16 @@ class Arms(games.Animation):
                 self.player.arm_side = 0
                 self.destroy()
 
+            self.shadow.x = self.player.shadow.x + self.xshift * math.sin(math.radians(self.player.shadow.angle + self.angshift + 90))
+            self.shadow.y = self.player.shadow.y + self.xshift * -math.cos(math.radians(self.player.shadow.angle + self.angshift + 90))
+            self.shadow.angle = self.angle
+
         if self.player.game.play_status == 1:
             self.destroy()
 
     def destroy(self):
         self.player.arms = False
+        self.shadow.destroy()
         try:
             self.player.game.non_activated_sprites.remove(self)
         except(ValueError):
@@ -239,13 +302,16 @@ class Arms(games.Animation):
 
 class Legs(games.Animation):
     """ The legs of a football player """
+    WALK_INTERVAL = 4
+    RUN_INTERVAL = 2
     def __init__(self, player, images):
         """ Initializes object """
         self.player = player
-        if games.keyboard.is_pressed(games.K_RALT) or games.keyboard.is_pressed(games.K_LALT):
-            interval = 9
-        else:
-            interval = 14
+        if self.player.speed == self.player.speed_r:
+            interval = Legs.RUN_INTERVAL
+
+        elif self.player.speed == self.player.speed_w:
+            interval = Legs.WALK_INTERVAL
 
         super(Legs, self).__init__(images=images,
                                    x=self.player.x, y=self.player.y,
@@ -253,20 +319,20 @@ class Legs(games.Animation):
                                    repeat_interval=interval,
                                    n_repeats=0, is_collideable=False)
         games.screen.add(self)
-        self.lower(self.player)
+        self.lower(self.player.shadow)
 
         self.player.game.non_activated_sprites.append(self) # 'Legs' object will move with the player it is attached to
 
-    def update(self):
+    def update_position(self):
         self.x = self.player.x
         self.y = self.player.y
         self.angle = self.player.angle
 
         if self.player.speed == self.player.speed_r:
-            self.set_interval(9)
+            self.interval = Legs.RUN_INTERVAL
 
         elif self.player.speed == self.player.speed_w:
-            self.set_interval(14)
+            self.interval = Legs.WALK_INTERVAL
 
         elif self.player.speed == 0:
             self.destroy()
@@ -284,7 +350,14 @@ class Legs(games.Animation):
 
 class Basic_player(games.Sprite):
     """ Base class for all football players """
-    BASE_LEG_IMAGE = games.load_image("images\\feet.bmp")
+    BASE_LEG_IMAGE = games.load_image("images\\dot.bmp")
+    hit = games.load_sound("sounds\\hit.wav")
+
+    def __init__(self, image, angle=0, x=0, y=0):
+        super(Basic_player, self).__init__(image, angle, x, y)
+        self.shadow = Shadow(self, 2, 3, txoffset=1, tyoffset=1)
+        games.screen.add(self.shadow)
+        self.shadow.elevate(self.game.field)
 
     def update(self):
         if self.tackled > 0:
@@ -292,22 +365,30 @@ class Basic_player(games.Sprite):
             if self.tackled == 0:
                 self.image = self.main_image
                 del self.main_image
+                self.shadow.main_data()
+
+        self.shadow.update_position()
+        if self.legs and games.screen.all_objects:
+            self.legs.update_position()
 
     def load_images(self, team, position, place):
         """ Loads all images necessary for object """
         team = team.lower()
         self.tackled_i = games.load_image("images\\" + team + position + place + "tackled.bmp")
-        self.leg_i = [games.load_image("images\\" + team + "leg" + place + "1.bmp"),
-                      games.load_image("images\\" + team + "leg" + place + "2.bmp")]
+        self.leg_i = games.load_animation(
+                     ["images\\" + team + "leg" + place + "1.bmp",
+                      "images\\" + team + "leg" + place + "2.bmp",
+                      "images\\" + team + "leg" + place + "3.bmp",
+                      "images\\" + team + "leg" + place + "2.bmp",
+                      "images\\" + team + "leg" + place + "1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + team + "leg" + place + "4.bmp",
+                      "images\\" + team + "leg" + place + "5.bmp",
+                      "images\\" + team + "leg" + place + "6.bmp",
+                      "images\\" + team + "leg" + place + "5.bmp",
+                      "images\\" + team + "leg" + place + "4.bmp",
+                      "images\\dot.bmp"])
         return games.load_image("images\\" + team + position + place + ".bmp")
-
-    def create_leg_list(self, add_list, every):
-        insert = every
-        while insert <= len(add_list):
-            add_list[insert:insert] = [Basic_player.BASE_LEG_IMAGE]
-            insert += every + 1
-
-        return add_list
 
     def turn(self, sprite):
         """ Rotate sprite """
@@ -362,7 +443,7 @@ class Basic_player(games.Sprite):
                 sprite.y -= y_change
 
         # set leg images
-        if not self.legs and games.screen.all_objects:
+        if not self.legs and self.speed != 0 and games.screen.all_objects:
             self.legs = Legs(player=self, images=self.leg_i)
 
     def move(self, speed, func=True):
@@ -423,7 +504,7 @@ class Basic_player(games.Sprite):
             self.y += speed * -math.cos(math.radians(self.angle))
 
         # set leg images
-        if not self.legs and self in games.screen.all_objects:
+        if not self.legs and self.speed != 0 and self in games.screen.all_objects:
             self.legs = Legs(player=self, images=self.leg_i)
 
     def slide(self, amount):
@@ -466,15 +547,23 @@ class Basic_player(games.Sprite):
             self.y -= amount * -math.cos(math.radians(self.angle - 90))
 
     def tackle(self, player):
+        self.game.play_sound(Basic_player.hit)
         self.elevate(player)
-        self.tackled = 400
-        player.tackled = 425
+        self.tackled = 350
+        player.tackled = 375
         self.main_image = self.image
         player.main_image = player.image
-        player.image = player.tackled_i
+        angle1 = (player.angle - 90) % 360
+        angle2 = (player.angle + 90) % 360
+        if (angle1 < self.angle < angle2) or ((angle1 < self.angle < 360 or 0 <= self.angle < angle2) and angle2 < 180):
+            player.image = player.tackled_i
+        else:
+            player.image = player.tackled_i1
         self.image = self.tackled_i
         player.speed = 0
         self.speed = 0
+        self.shadow.tackle_data()
+        player.shadow.tackle_data()
 
     def overlap_func(self):
         """ Method called when sprite overlaps another sprite """
@@ -502,12 +591,14 @@ class Basic_offence(Basic_player):
                 # --- allow sprite to move based on keys pressed if activated ---
                 
                 if self == self.game.ball_carrier:
+                    if self.bottom < self.game.field.bottom - self.game.line_of_scrimmage - 360:
+                        self.game.passed_line = True
                     # rotate sprite based on keys pressed
                     if games.keyboard.is_pressed(games.K_RIGHT):
-                        self.angle += 3
+                        self.angle += 4
 
                     if games.keyboard.is_pressed(games.K_LEFT):
-                        self.angle -= 3
+                        self.angle -= 4
 
                     # --- make sprite move based on keys pressed ---
 
@@ -552,12 +643,12 @@ class Basic_offence(Basic_player):
         """ Method to make self tackle 'player' """
         super(Basic_offence, self).tackle(player)
         if random.randrange(25) == 0:
-            message = ftxt.Football_message(game = self.game, value = "Fumble!",
-                                            x = games.screen.width / 2,
-                                            y = games.screen.height / 2)
+            message = ftxt.Football_message(self.game, "Fumble!",
+                                            x=games.screen.width / 2,
+                                            y=games.screen.height / 2)
             games.screen.add(message)
 
-            football = Football("bounce", self.game,
+            football = Football(self, "bounce",
                                 player.x + 25 * math.sin(math.radians(player.angle)),
                                 player.y + 25 * -math.cos(math.radians(player.angle)),
                                 player.angle)
@@ -572,8 +663,21 @@ class Basic_offence(Basic_player):
             self.game.down = 0
             self.game.change_offence()
 
+    def ball_overlap(self, ball):
+        if (self not in self.game.can_not_catch or ball.play != "pass") and not self.tackled and ball.player != self:
+            self.game.ball_carrier = self
+            ball.destroy()
+            if ball.play == "punt":
+                self.game.for_first_down = 360
+                self.game.line_of_scrimmage = 3600 - (self.game.field.bottom - self.y - 360)
+                self.game.play_status = 1
+                self.game.down = 0
+                self.game.change_offence()
+
 class Basic_defense(Basic_player):
     """ Base class for defensive players """
+    intercept = None
+
     def update(self):
         if not self.tackled:
             if self.game.play_status == 0:
@@ -591,7 +695,7 @@ class Basic_defense(Basic_player):
                     else:
                         self.angle = 180
 
-                else:
+                elif self.speed != 0:
                     self.move(self.speed)
 
         super(Basic_defense, self).update()
@@ -599,12 +703,12 @@ class Basic_defense(Basic_player):
     def tackle(self, player):
         super(Basic_defense, self).tackle(player)
         if random.randrange(25) == 0:
-            message = ftxt.Football_message(game=self.game, value="Fumble!",
+            message = ftxt.Football_message(self.game, "Fumble!",
                                             x=games.screen.width / 2,
                                             y=games.screen.height / 2)
             games.screen.add(message)
 
-            football = Football("bounce", self.game,
+            football = Football(self, "bounce",
                                 player.x + 25 * math.sin(math.radians(player.angle)),
                                 player.y + 25 * -math.cos(math.radians(player.angle)),
                                 player.angle)
@@ -621,17 +725,45 @@ class Basic_defense(Basic_player):
                 self.game.sBoard.update_score()
                 self.game.down = 0
                 self.game.sBoard.stop_clock()
-                if self.game.quarter == 5:
-                    self.game.end_game()
-                else:
-                    message = ftxt.Football_message(game = self.game,
-                                                    x = games.screen.width / 2,
-                                                    y = games.screen.height / 2,
-                                                    value = "Safety!")
-                    games.screen.add(message)
+                message = ftxt.Football_message(self.game, "Safety!",
+                                                x=games.screen.width / 2,
+                                                y=games.screen.height / 2)
+                games.screen.add(message)
             else:
                 self.game.for_first_down -= self.game.field.bottom - self.game.line_of_scrimmage - 360 - player.y
                 self.game.line_of_scrimmage = self.game.field.bottom - player.y - 360
+
+    def ball_overlap(self, ball):
+        if not self.tackled and ball.player != self:
+            if ball.play == "pass":
+                if self not in self.game.can_not_catch:
+                    if Basic_defense.intercept == 0:
+                        self.game.ball_carrier = self
+                        ball.destroy()
+                        message = ftxt.Football_message(self.game, "Interception!",
+                                                        x=games.screen.width / 2,
+                                                        y=games.screen.height / 2)
+                        games.screen.add(message)
+                        self.reset_intercept()
+                    else:
+                        Basic_defense.intercept -= 1
+                        print Basic_defense.intercept
+            else:
+                self.game.ball_carrier = self
+                ball.destroy()
+        ###########
+        #if (self not in self.game.can_not_catch or ball.play != "pass") and not self.tackled and ball.player != self:
+        #    self.game.ball_carrier = self
+        #    ball.destroy()
+        #    if ball.play == "pass":
+        #        message = ftxt.Football_message(self.game, "Interception!",
+        #                                        x=games.screen.width / 2,
+        #                                        y=games.screen.height / 2)
+        #        games.screen.add(message)
+
+    def reset_intercept():
+        Basic_defense.intercept = 50 + random.randrange(150)
+    reset_intercept = staticmethod(reset_intercept)
 
 class QB(Basic_offence):
     """ The quarterback """
@@ -643,13 +775,39 @@ class QB(Basic_offence):
         self.game = game
         # if team 1 is on offence
         if self.game.team1_offence:
-            image = self.load_images(self.game.team1, "qb", "h")
+            image, self.tackled_i, self.tackled_i1 = self.game.team1_images[0]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
 
         # if team 2 is on offence
         else:
-            image = self.load_images(self.game.team2, "qb", "a")
+            image, self.tackled_i, self.tackled_i1 = self.game.team2_images[0]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
         
-        super(QB, self).__init__(image=image, x=x, y=y)
+        super(QB, self).__init__(image, x=x, y=y)
 
         self.game.players.append(self) # add self to list of all players
         self.game.o_players.append(self) # add self to list of offencive players
@@ -663,15 +821,14 @@ class QB(Basic_offence):
             self.speed_r = QB.base_speed1
         self.legs = False
         self.arms = False
-        self.leg_i = self.create_leg_list(self.leg_i, 1)
         self.tackled = 0
         self.arm_side = 0
 
     def update(self):
         if not self.tackled:
             if self == self.game.ball_carrier:
-                if games.keyboard.is_pressed(games.K_SPACE) and self.game.bar.left < 0:
-                    self.game.bar.x += 7
+                if games.keyboard.is_pressed(games.K_SPACE):
+                    self.game.bar.advance()
 
                 if games.keyboard.is_pressed(games.K_PERIOD):
                     if self.arm_side != 1:
@@ -696,12 +853,12 @@ class QB(Basic_offence):
                 # makes quarterback throw the football
                 if games.keyboard.is_pressed(games.K_m):
                     self.speed = 0
-                    football = Football(game = self.game, play = "pass",
-                        x = 10 * math.sin((self.angle + 90) * math.pi / 180) + self.x,
-                        y = 10 * -math.cos((self.angle + 90) * math.pi / 180) + self.y,
-                        angle = self.angle)
+                    football = Football(self, "pass",
+                         10 * math.sin(math.radians(self.angle + 90)) + self.x,
+                         10 * -math.cos(math.radians(self.angle + 90)) + self.y,
+                        self.angle)
                     games.screen.add(football)
-                    self.game.bar.right = 0
+                    self.game.bar.reset()
 
         super(QB, self).update()
 
@@ -715,12 +872,44 @@ class WR(Basic_offence):
         self.game = game
         self.side = side
         if self.game.team1_offence:
-            image = self.load_images(self.game.team1, self.side + "wr", "h")
+            if self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[4]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[5]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
 
         else:
-            image = self.load_images(self.game.team2, self.side + "wr", "a")
+            if self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[4]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[5]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
 
-        super(WR, self).__init__(image=image, x=x, y=y)
+        super(WR, self).__init__(image, x=x, y=y)
 
         self.game.players.append(self) # add self to list of all players
         self.game.o_players.append(self) # add self to list of offencive players
@@ -735,66 +924,49 @@ class WR(Basic_offence):
         self.timer = 0
         self.legs = False
         self.arms = False
-        self.leg_i = self.create_leg_list(self.leg_i, 1)
         self.tackled = 0
+
+        if self.game.play_num == 1:
+            self.markers = [(1245, 10), (1245, 600)]
+        elif self.game.play_num == 2:
+            if self.side == "l":
+                self.markers = [(1305, 675)]
+            elif self.side == "r":
+                self.markers = [(615, 525)]
+        elif self.game.play_num == 3:
+            if self.side == "l":
+                self.markers = [(705, 600)]
+            elif self.side == "r":
+                self.markers = [(615, 525)]
+        elif self.game.play_num == 4:
+            if self.side == "l":
+                self.markers = [(1305, 675)]
+            elif self.side == "r":
+                self.markers = [(1215, 50), (1515, 50)]
+        elif self.game.play_num == 5:
+            if self.side == "l":
+                self.markers = [(705, 350), (1305, 350)]
+            elif self.side == "r":
+                self.markers = [(1215, 125), (615, 125)]
+        elif self.game.play_num == 6:
+            if self.side == "l":
+                self.markers = [(705, 200), (960, 125), (1600, 200)]
+            elif self.side == "r":
+                self.markers = [(1215, 350), (815, 650)]
 
     def update(self):
         if not self.tackled:
             if not self == self.game.ball_carrier:
                 if self.game.play_status == 0:
-                    #-------------------- plays --------------------
-                    if self.game.play_num == 1:
-                        self.speed = self.speed_r
-
-                    elif self.game.play_num == 2:
-                        self.speed = self.speed_r
-                        if self.side == "l":
-                            self.angle = 70
-                        else:
-                            self.angle = 300
-
-                    elif self.game.play_num == 3:
-                        self.speed = self.speed_r
-                        if self.side == "l":
-                            self.angle = 315
-                        elif self.side == "r":
-                            if self.y < self.game.field.bottom - self.game.line_of_scrimmage - 410:
-                                if self.angle > 270 or self.angle == 0:
-                                    self.angle -= 3
-                                else:
-                                    self.angle = 270
-
-                    elif self.game.play_num == 4:
-                        self.speed = self.speed_r
-                        if self.side == "l":
-                            self.angle = 50
-
-                    elif self.game.play_num == 5:
-                        self.speed = self.speed_r
-                        if self.side == "r":
-                            if self.angle > 270 or self.angle == 0:
-                                self.angle -= 3
-                            else:
-                                self.angle = 270
-                        elif self.side == "l":
-                            self.timer += 1
-                            if self.timer >= 40:
-                                if self.angle < 90:
-                                    self.angle += 2
-                                else:
-                                    self.angle = 90
-
-                    elif self.game.play_num == 6:
-                        self.speed = self.speed_r
-                        if self.side == "l":
-                            if self.y < self.game.field.bottom - self.game.line_of_scrimmage - 560 and self.x < self.game.field.left + 960:
-                                self.angle = 105
-                            elif self.x > self.game.field.left + 920:
-                                self.angle = 75
-                        elif self.side == "r":
-                            if self.y < self.game.field.bottom - self.game.line_of_scrimmage - 660:
-                                self.angle = 315
-                    #-----------------------------------------------
+                    if self.markers == []:
+                        self.speed = 0
+                    else:
+                        if self.game.field.left + self.markers[0][0] - 3 < self.x < self.game.field.left + self.markers[0][0] + 3 and self.game.field.bottom - self.game.line_of_scrimmage - 360 - self.markers[0][1] - 3 < self.y < self.game.field.bottom - self.game.line_of_scrimmage - 360 - self.markers[0][1] + 3:
+                            del self.markers[0]
+                        if self.markers != []:
+                            self.speed = self.speed_r
+                            self.angle = 90 + math.degrees(math.atan2((self.game.field.bottom - self.game.line_of_scrimmage - 360 - self.markers[0][1]) - self.y,
+                                                                       self.game.field.left + self.markers[0][0] - self.x))
 
         # get Basic_offence's update method
         super(WR, self).update()
@@ -803,7 +975,7 @@ class WR(Basic_offence):
         self.slide(-self.speed_w)
 
 class RB(Basic_offence):
-    """ The center """
+    """ A running back """
     base_speed = None
     base_speed1 = None
     
@@ -812,12 +984,44 @@ class RB(Basic_offence):
         self.game = game
         self.num = num
         if self.game.team1_offence:
-            image = self.load_images(self.game.team1, "rb" + self.num, "h")
+            if self.num == "1":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[1]
+            elif self.num == "2":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[2]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
 
         else:
-            image = self.load_images(self.game.team2, "rb" + self.num, "a")
+            if self.num == "1":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[1]
+            elif self.num == "2":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[2]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
 
-        super(RB, self).__init__(image=image, x=x, y=y)
+        super(RB, self).__init__(image, x=x, y=y)
 
         self.game.players.append(self) # add self to list of all players
         self.game.o_players.append(self) # add self to list of offencive players
@@ -831,7 +1035,6 @@ class RB(Basic_offence):
             self.speed_r = RB.base_speed1
         self.legs = False
         self.arms = False
-        self.leg_i = self.create_leg_list(self.leg_i, 1)
         self.tackled = 0
 
     def update(self):
@@ -884,17 +1087,45 @@ class Center(Basic_offence):
     base_speed1 = None
     block = None
     block1 = None
+
+    sound = games.load_sound("sounds\\hut.wav")
     
     def __init__(self, game, x, y):
         """ Initializes object """
         self.game = game
         if self.game.team1_offence:
-            image = self.load_images(self.game.team1, "c", "h")
+            image, self.tackled_i, self.tackled_i1 = self.game.team1_images[11]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
 
         else:
-            image = self.load_images(self.game.team2, "c", "a")
+            image, self.tackled_i, self.tackled_i1 = self.game.team2_images[11]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
 
-        super(Center, self).__init__(image=image, x=x, y=y)
+        super(Center, self).__init__(image, x=x, y=y)
 
         self.game.players.append(self) # add self to list of all players
         self.game.o_players.append(self) # add self to list of offencive players
@@ -914,7 +1145,6 @@ class Center(Basic_offence):
         self.can_snap = True
         self.legs = False
         self.arms = False
-        self.leg_i = self.create_leg_list(self.leg_i, 1)
         self.tackled = 0
         self.opponent = None
 
@@ -925,8 +1155,8 @@ class Center(Basic_offence):
                     if self.opponent == None:
                         for player in self.game.d_players:
                             if not player.tackled and self.x - 40 < player.x < self.x + 40 and self.y - 20 < player.y < self.y + 20:
-                                for ol in [self.game.llol, self.game.lol, self.game.rol, self.game.rrol]:
-                                    if ol.opponent == player:
+                                for ol in (self.game.llol, self.game.lol, self.game.rol, self.game.rrol, self.game.te1):
+                                    if ol != None and ol.opponent == player:
                                         break
                                 else:
                                     self.opponent = player
@@ -954,15 +1184,16 @@ class Center(Basic_offence):
 
             if self.can_snap:
                 if games.keyboard.is_pressed(games.K_SPACE) and self.game.play_status != 0:
+                    self.game.play_sound(Center.sound)
                     # initialize football sprite
-                    football = Football(play = "hike", game = self.game,
-                                        x = self.x, y = self.y + 10, angle = 180)
+                    football = Football(self, "hike", self.x, self.y + 10, 180)
                     games.screen.add(football)
                     self.can_snap = False
 
         super(Center, self).update()
 
 class OL(Basic_offence):
+    """ An offencive line player """
     base_speed = None
     base_speed1 = None
     block = None
@@ -972,12 +1203,52 @@ class OL(Basic_offence):
         self.game = game
         self.side = side
         if self.game.team1_offence:
-            image = self.load_images(self.game.team1, self.side + "ol", "h")
+            if self.side == "ll":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[9]
+            elif self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[10]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[12]
+            elif self.side == "rr":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[13]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
 
         else:
-            image = self.load_images(self.game.team2, self.side + "ol", "a")
+            if self.side == "ll":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[9]
+            elif self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[10]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[12]
+            elif self.side == "rr":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[13]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
 
-        super(OL, self).__init__(image=image, x=x, y=y)
+        super(OL, self).__init__(image, x=x, y=y)
 
         self.game.players.append(self) # add self to list of all players
         self.game.o_players.append(self) # add self to list of offencive players
@@ -995,7 +1266,6 @@ class OL(Basic_offence):
         self.timer = self.block
         self.legs = False
         self.arms = False
-        self.leg_i = self.create_leg_list(self.leg_i, 1)
         self.tackled = 0
         if self.side == "r":
             self.opponent = self.game.ltackle
@@ -1031,6 +1301,133 @@ class OL(Basic_offence):
 
         super(OL, self).update()
 
+class TE(Basic_offence):
+    """ A tight end """
+    base_speed = None
+    base_speed1 = None
+    block = None
+    block1 = None
+    
+    def __init__(self, game, x, y, num):
+        """ Initializes object """
+        self.game = game
+        self.num = num
+        if self.game.team1_offence:
+            if self.num == "1":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[14]
+            elif self.num == "2":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[15]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
+
+        else:
+            if self.num == "1":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[14]
+            elif self.num == "2":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[15]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
+
+        super(TE, self).__init__(image, x=x, y=y)
+
+        self.game.players.append(self) # add self to list of all players
+        self.game.o_players.append(self) # add self to list of offencive players
+
+        self.speed = 0
+        if self.game.team1_offence:
+            self.speed_w = TE.base_speed / 2
+            self.speed_r = TE.base_speed
+            self.block = TE.block
+        else:
+            self.speed_w = TE.base_speed1 / 2
+            self.speed_r = TE.base_speed1
+            self.block = TE.block1
+        self.timer = self.block
+        self.legs = False
+        self.arms = False
+        self.tackled = 0
+        self.opponent = None
+        if self.game.play_num == 6:
+            self.markers = [(1080, 20), (1680, 620)]
+
+    def update(self):
+        if not self.tackled:
+            if not self == self.game.ball_carrier:
+                if self.game.play_status == 0:
+                    if self.game.play_num in (1, 3):
+                        if self.opponent == None:
+                            for player in self.game.d_players:
+                                if not player.tackled and self.x - 50 < player.x < self.x + 40 and self.y - 50 < player.y < self.y + 40:
+                                    for ol in (self.game.llol, self.game.lol, self.game.rol, self.game.rrol, self.game.center):
+                                        if ol != None and ol.opponent == player:
+                                            break
+                                    else:
+                                        self.opponent = player
+                                        if self not in self.game.can_not_catch:
+                                            self.game.can_not_catch.append(self)
+                                    if self.opponent != None:
+                                        break
+
+                    if self.opponent != None:
+                        if self.game.ball_carrier in self.game.o_players and self.opponent.speed != 0:
+                            self.speed = self.speed_r
+                            if self.x - 60 < self.opponent.x < self.x + 60 and self.y - 60 < self.opponent.y < self.y + 60:
+                                self.speed = 0
+                                self.angle = 180 + self.opponent.angle
+                                if self.timer == 0:
+                                    self.timer = self.block
+                                else:
+                                    if self.opponent.x < self.x:
+                                        self.slide(-self.speed_r)
+                                    elif self.opponent.x > self.x:
+                                        self.slide(self.speed_r)
+                                    self.timer -= 1
+                            else:
+                                self.angle = 90 + math.degrees(math.atan2(((self.opponent.y - self.game.ball_carrier.y) / 4 + self.game.ball_carrier.y) - self.y, ((self.opponent.x - self.game.ball_carrier.x) / 4 + self.game.ball_carrier.x) - self.x))
+                                self.speed = self.speed_r
+                        else:
+                            self.speed = 0
+
+                    elif self.game.play_num == 3:
+                        if self.game.rb1 == self.game.ball_carrier and self.game.rb1.x > self.game.field.left + 1080:
+                            self.speed = self.speed_r
+                            self.angle = self.game.rb1.angle
+
+                    elif self.game.play_num == 6:
+                        if self.markers == []:
+                            self.speed = 0
+                        else:
+                            if self.game.field.left + self.markers[0][0] - 3 < self.x < self.game.field.left + self.markers[0][0] + 3 and self.game.field.bottom - self.game.line_of_scrimmage - 360 - self.markers[0][1] - 3 < self.y < self.game.field.bottom - self.game.line_of_scrimmage - 360 - self.markers[0][1] + 3:
+                                del self.markers[0]
+                            if self.markers != []:
+                                self.speed = self.speed_w
+                                self.angle = 90 + math.degrees(math.atan2((self.game.field.bottom - self.game.line_of_scrimmage - 360 - self.markers[0][1]) - self.y,
+                                                                           self.game.field.left + self.markers[0][0] - self.x))
+
+        super(TE, self).update()
+
 class Punter(Basic_offence):
     """ The punter """
     base_speed = None
@@ -1039,15 +1436,39 @@ class Punter(Basic_offence):
     def __init__(self, game, x, y):
         """ Initializes object """
         self.game = game
-        # if team 1 is on offence
         if self.game.team1_offence:
-            image = self.load_images(self.game.team1, "p", "h")
+            image, self.tackled_i, self.tackled_i1 = self.game.team1_images[16]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
 
-        # if team 2 is on offence
         else:
-            image = self.load_images(self.game.team2, "p", "a")
+            image, self.tackled_i, self.tackled_i1 = self.game.team2_images[16]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
         
-        super(Punter, self).__init__(image=image, x=x, y=y)
+        super(Punter, self).__init__(image, x=x, y=y)
 
         self.game.players.append(self) # add self to list of all players
         self.game.o_players.append(self) # add self to list of offencive players
@@ -1061,25 +1482,22 @@ class Punter(Basic_offence):
             self.speed_r = Punter.base_speed1
         self.legs = False
         self.arms = False
-        self.leg_i = self.create_leg_list(self.leg_i, 1)
         self.tackled = 0
 
     def update(self):
         if not self.tackled:
             if self == self.game.ball_carrier:
-                if games.keyboard.is_pressed(games.K_SPACE) and self.game.bar.left < 0:
-                    self.game.bar.x += 10
-                    if self.game.bar.left > 0:
-                        self.game.bar.left = 0
+                if games.keyboard.is_pressed(games.K_SPACE):
+                    self.game.bar.advance()
 
                 if games.keyboard.is_pressed(games.K_m):
                     self.speed = 0
-                    football = Football("punt", self.game,
-                        5 * math.sin((self.angle + 90) * math.pi / 180) + self.x,
-                        5 * -math.cos((self.angle + 90) * math.pi / 180) + self.y,
-                        self.angle, self.game.bar.right * 3)
+                    football = Football(self, "punt",
+                        5 * math.sin(math.radians(self.angle + 90)) + self.x,
+                        5 * -math.cos(math.radians(self.angle + 90)) + self.y,
+                        self.angle)
                     games.screen.add(football)
-                    self.game.bar.right = 0
+                    self.game.bar.reset()
 
         super(Punter, self).update()
 
@@ -1088,17 +1506,45 @@ class STCenter(Basic_offence):
     base_speed1 = None
     block = None
     block1 = None
+
+    sound = games.load_sound("sounds\\hut.wav")
     
     def __init__(self, game, x, y):
         """ Initializes object """
         self.game = game
         if self.game.team1_offence:
-            image = self.load_images(self.game.team1, "stc", "h")
+            image, self.tackled_i, self.tackled_i1 = self.game.team1_images[22]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
 
         else:
-            image = self.load_images(self.game.team2, "stc", "a")
+            image, self.tackled_i, self.tackled_i1 = self.game.team2_images[22]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
 
-        super(STCenter, self).__init__(image=image, x=x, y=y)
+        super(STCenter, self).__init__(image, x=x, y=y)
 
         self.game.players.append(self) # add self to list of all players
         self.game.o_players.append(self) # add self to list of offencive players
@@ -1118,7 +1564,6 @@ class STCenter(Basic_offence):
         self.can_snap = True
         self.legs = False
         self.arms = False
-        self.leg_i = self.create_leg_list(self.leg_i, 1)
         self.tackled = 0
         self.opponent = self.game.ctackle
 
@@ -1151,9 +1596,9 @@ class STCenter(Basic_offence):
 
             if self.can_snap:
                 if games.keyboard.is_pressed(games.K_SPACE) and self.game.play_status != 0:
+                    self.game.play_sound(STCenter.sound)
                     # initialize football sprite
-                    football = Football(play = "hike", game = self.game,
-                                        x = self.x, y = self.y + 10, angle = 180)
+                    football = Football(self, "hike", self.x, self.y + 10, 180)
                     games.screen.add(football)
                     self.can_snap = False
 
@@ -1169,10 +1614,50 @@ class STOL(Basic_offence):
         self.game = game
         self.side = side
         if self.game.team1_offence:
-            image = self.load_images(self.game.team1, self.side + "stol", "h")
+            if self.side == "ll":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[20]
+            elif self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[21]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[23]
+            elif self.side == "rr":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[24]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
 
         else:
-            image = self.load_images(self.game.team2, self.side + "stol", "a")
+            if self.side == "ll":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[20]
+            elif self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[21]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[23]
+            elif self.side == "rr":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[24]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
 
         super(STOL, self).__init__(image=image, x=x, y=y)
 
@@ -1192,7 +1677,6 @@ class STOL(Basic_offence):
         self.timer = self.block
         self.legs = False
         self.arms = False
-        self.leg_i = self.create_leg_list(self.leg_i, 1)
         self.tackled = 0
         if self.side == "r":
             self.opponent = self.game.ltackle
@@ -1232,55 +1716,7 @@ class STOL(Basic_offence):
 
         super(STOL, self).update()
 
-class Noseguard(Basic_defense):
-    base_speed = None
-    base_speed1 = None
-    
-    def __init__(self, game, x, y):
-        """ Initializes sprite """
-        self.game = game
-        if self.game.team1_offence:
-            image = self.load_images(self.game.team2, "ng", "a")
-
-        else:
-            image = self.load_images(self.game.team1, "ng", "h")
-
-        super(Noseguard, self).__init__(image=image, angle=180, x=x, y=y)
-
-        self.game.players.append(self) # add self to list of all players
-        self.game.d_players.append(self) # add self to list of defensive players
-        self.game.can_not_catch.append(self)
-
-        self.speed = 0
-        if self.game.team1_offence:
-            self.speed_w = Noseguard.base_speed / 2
-            self.speed_r = Noseguard.base_speed
-        else:
-            self.speed_w = Noseguard.base_speed1 / 2
-            self.speed_r = Noseguard.base_speed1
-        self.legs = False
-        self.arms = False
-        self.leg_i = self.create_leg_list(self.leg_i, 1)
-        self.tackled = 0
-
-    def update(self):
-        if not self.tackled:
-            if not self == self.game.ball_carrier:
-                if self.game.play_status == 0:
-                    if self.game.ball_carrier in self.game.o_players and (self.game.ball_carrier.y > self.y - 20 or self.game.ball_carrier.speed < self.speed_r):
-                        self.speed = self.speed_r
-                        self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y - self.y, self.game.ball_carrier.x - self.x))
-                    else:
-                        self.speed = 0
-            
-        # get Basic_defense's update method
-        super(Noseguard, self).update()
-
-    def overlap_func(self):
-        self.move(-self.speed, False)
-        self.slide(-self.speed_r)
-
-class Tackle(Basic_defense):
+class DL(Basic_defense):
     base_speed = None
     base_speed1 = None
 
@@ -1288,12 +1724,56 @@ class Tackle(Basic_defense):
         self.game = game
         self.side = side
         if self.game.team1_offence:
-            image = self.load_images(self.game.team2, self.side + "t", "a")
+            if self.side == "ll":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[27]
+            elif self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[28]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[29]
+            elif self.side == "rr":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[30]
+            elif self.side == "rrr":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[31]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
 
         else:
-            image = self.load_images(self.game.team1, self.side + "t", "h")
+            if self.side == "ll":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[27]
+            elif self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[28]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[29]
+            elif self.side == "rr":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[30]
+            elif self.side == "rrr":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[31]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
 
-        super(Tackle, self).__init__(image=image, angle=180, x=x, y=y)
+        super(DL, self).__init__(image, 180, x, y)
 
         self.game.players.append(self) # add self to list of all players
         self.game.d_players.append(self) # add self to list of defensive players
@@ -1301,14 +1781,13 @@ class Tackle(Basic_defense):
 
         self.speed = 0
         if self.game.team1_offence:
-            self.speed_w = Tackle.base_speed / 2
-            self.speed_r = Tackle.base_speed
+            self.speed_w = DL.base_speed / 2
+            self.speed_r = DL.base_speed
         else:
-            self.speed_w = Tackle.base_speed1 / 2
-            self.speed_r = Tackle.base_speed1
+            self.speed_w = DL.base_speed1 / 2
+            self.speed_r = DL.base_speed1
         self.legs = False
         self.arms = False
-        self.leg_i = self.create_leg_list(self.leg_i, 1)
         self.tackled = 0
 
     def update(self):
@@ -1322,7 +1801,7 @@ class Tackle(Basic_defense):
                         self.speed = 0
             
         # get Basic_defense's update method
-        super(Tackle, self).update()
+        super(DL, self).update()
 
     def overlap_func(self):
         self.move(-self.speed, False)
@@ -1339,12 +1818,48 @@ class LB(Basic_defense):
         self.game = game
         self.side = side
         if self.game.team1_offence:
-            image = self.load_images(self.game.team2, self.side + "lb", "a")
+            if self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[32]
+            elif self.side == "c":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[33]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[34]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
 
         else:
-            image = self.load_images(self.game.team1, self.side + "lb", "h")
+            if self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[32]
+            elif self.side == "c":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[33]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[34]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
 
-        super(LB, self).__init__(image=image, angle=180, x=x, y=y)
+        super(LB, self).__init__(image, 180, x, y)
 
         self.game.players.append(self) # add self to list of all players
         self.game.d_players.append(self) # add self to list of defensive players
@@ -1359,7 +1874,6 @@ class LB(Basic_defense):
             self.speed_r = LB.base_speed1
         self.legs = False
         self.arms = False
-        self.leg_i = self.create_leg_list(self.leg_i, 1)
         self.tackled = 0
 
     def update(self):
@@ -1370,16 +1884,20 @@ class LB(Basic_defense):
                         self.speed = self.speed_r
                         self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y - self.y, self.game.ball_carrier.x - self.x))
                     elif self.game.ball_carrier in self.game.o_players:
-                        if self.game.ball_carrier.y < self.game.field.bottom - self.game.line_of_scrimmage - 360:
+                        if self.game.passed_line:
+                            distance = abs((self.x - self.game.ball_carrier.x) / -math.cos(self.angle)) * 9/10
+                            self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y + distance * -math.cos(math.radians(self.game.ball_carrier.angle)) - self.y,
+                                                                      self.game.ball_carrier.x + distance * math.sin(math.radians(self.game.ball_carrier.angle)) - self.x))
                             self.speed = self.speed_r
-                            self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y - self.y, self.game.ball_carrier.x - self.x))
                         elif self.side == "r":
                             if self.game.ball_carrier.x < self.game.field.left + 860:
                                 if self.game.ball_carrier.y < self.game.field.bottom - self.game.line_of_scrimmage - 340:
+                                    distance = abs((self.x - self.game.ball_carrier.x) / -math.cos(self.angle)) * 9/10
+                                    self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y + distance * -math.cos(math.radians(self.game.ball_carrier.angle)) - self.y,
+                                                                              self.game.ball_carrier.x + distance * math.sin(math.radians(self.game.ball_carrier.angle)) - self.x))
                                     self.speed = self.speed_r
-                                    self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y - self.y, self.game.ball_carrier.x - self.x))
                                 else:
-                                    if self.game.ball_carrier.x < self.x - 50 and self.x > self.game.field.left + 480:
+                                    if self.game.ball_carrier.x < self.x - 50 and self.x > self.game.field.left + 200:
                                         self.slide(self.speed_r)
                                     elif self.game.ball_carrier.x > self.x + 50 and self.x < self.game.field.left + 1020:
                                         self.slide(-self.speed_r)
@@ -1387,17 +1905,21 @@ class LB(Basic_defense):
                                 self.speed = 0
                         elif self.side == "c":
                             if self.game.field.left + 860 <= self.game.ball_carrier.x <= self.game.field.right - 860 and self.game.ball_carrier.y < self.game.field.bottom - self.game.line_of_scrimmage - 350:
+                                distance = abs((self.x - self.game.ball_carrier.x) / -math.cos(self.angle)) * 9/10
+                                self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y + distance * -math.cos(math.radians(self.game.ball_carrier.angle)) - self.y,
+                                                                          self.game.ball_carrier.x + distance * math.sin(math.radians(self.game.ball_carrier.angle)) - self.x))
                                 self.speed = self.speed_r
-                                self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y - self.y, self.game.ball_carrier.x - self.x))
                             else:
                                 self.speed = 0
                         elif self.side == "l":
                             if self.game.ball_carrier.x > self.game.field.right - 860:
                                 if self.game.ball_carrier.y < self.game.field.bottom - self.game.line_of_scrimmage - 340:
+                                    distance = abs((self.x - self.game.ball_carrier.x) / -math.cos(self.angle)) * 9/10
+                                    self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y + distance * -math.cos(math.radians(self.game.ball_carrier.angle)) - self.y,
+                                                                              self.game.ball_carrier.x + distance * math.sin(math.radians(self.game.ball_carrier.angle)) - self.x))
                                     self.speed = self.speed_r
-                                    self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y - self.y, self.game.ball_carrier.x - self.x))
                                 else:
-                                    if self.game.ball_carrier.x > self.x + 50 and self.x < self.game.field.right - 480:
+                                    if self.game.ball_carrier.x > self.x + 50 and self.x < self.game.field.right - 200:
                                         self.slide(-self.speed_r)
                                     elif self.game.ball_carrier.x < self.x - 50 and self.x > self.game.field.right - 1020:
                                         self.slide(self.speed_r)
@@ -1415,12 +1937,44 @@ class CB(Basic_defense):
         self.game = game
         self.side = side
         if self.game.team1_offence:
-            image = self.load_images(self.game.team2, self.side + "cb", "a")
+            if self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[35]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[36]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
 
         else:
-            image = self.load_images(self.game.team1, self.side + "cb", "h")
+            if self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[35]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[36]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
 
-        super(CB, self).__init__(image=image, angle=180, x=x, y=y)
+        super(CB, self).__init__(image, 180, x, y)
 
         self.game.players.append(self) # add self to list of all players
         self.game.d_players.append(self) # add self to list of defensive players
@@ -1434,7 +1988,6 @@ class CB(Basic_defense):
             self.speed_r = CB.base_speed1
         self.legs = False
         self.arms = False
-        self.leg_i = self.create_leg_list(self.leg_i, 1)
         self.tackled = 0
         self.timer = 5
 
@@ -1496,11 +2049,44 @@ class Safety(Basic_defense):
         self.game = game
         self.num = num
         if self.game.team1_offence:
-            image = self.load_images(self.game.team2, "s" + self.num, "a")
-        else:
-            image = self.load_images(self.game.team1, "s" + self.num, "h")
+            if self.num == "1":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[37]
+            elif self.num == "2":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[38]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
 
-        super(Safety, self).__init__(image=image, angle=180, x=x, y=y)
+        else:
+            if self.num == "1":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[37]
+            elif self.num == "2":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[38]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
+
+        super(Safety, self).__init__(image, 180, x, y)
 
         self.game.players.append(self) # add self to list of all players
         self.game.d_players.append(self) # add self to list of defensive players
@@ -1525,7 +2111,6 @@ class Safety(Basic_defense):
                 self.speed_r = Safety.base_speed3
         self.legs = False
         self.arms = False
-        self.leg_i = self.create_leg_list(self.leg_i, 1)
         self.tackled = 0
 
     def update(self):
@@ -1544,8 +2129,24 @@ class Safety(Basic_defense):
                                                                       self.game.ball_carrier.x + distance * math.sin(math.radians(self.game.ball_carrier.angle)) - self.x))
                             self.speed = self.speed_r
                         elif self.game.ball_carrier not in self.game.players and self.game.ball_carrier.play != "hike":
-                            self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y - self.y, self.game.ball_carrier.x - self.x))
-                            self.speed = self.speed_r
+                            if self.game.ball_carrier.y < self.y + 50:
+                                self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y - self.y, self.game.ball_carrier.x - self.x))
+                                self.speed = self.speed_r
+                            else:
+                                if self.num == "1":
+                                    if self.game.ball_carrier.x > self.x:
+                                        if self.x < self.game.field.x - 40:
+                                            self.slide(-self.speed_r)
+                                    else:
+                                        if self.x > self.game.field.left + 200:
+                                            self.slide(self.speed_r)
+                                elif self.num == "2":
+                                    if self.game.ball_carrier.x < self.x:
+                                        if self.x > self.game.field.x + 40:
+                                            self.slide(self.speed_r)
+                                    else:
+                                        if self.x < self.game.field.right - 200:
+                                            self.slide(-self.speed_r)
                         else:
                             if self.num == "1":
                                 if self.game.ball_carrier.x < self.x - 100 and self.x > self.game.field.left + 480:
@@ -1574,7 +2175,7 @@ class Safety(Basic_defense):
     def overlap_func(self):
         self.slide(self.speed_w)
 
-class STTackle(Basic_defense):
+class STDL(Basic_defense):
     base_speed = None
     base_speed1 = None
 
@@ -1582,12 +2183,56 @@ class STTackle(Basic_defense):
         self.game = game
         self.side = side
         if self.game.team1_offence:
-            image = self.load_images(self.game.team2, self.side + "stt", "a")
+            if self.side == "ll":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[39]
+            elif self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[40]
+            elif self.side == "c":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[41]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[42]
+            elif self.side == "rr":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[43]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
 
         else:
-            image = self.load_images(self.game.team1, self.side + "stt", "h")
+            if self.side == "ll":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[39]
+            elif self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[40]
+            elif self.side == "c":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[41]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[42]
+            elif self.side == "rr":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[43]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
 
-        super(STTackle, self).__init__(image=image, angle=180, x=x, y=y)
+        super(STDL, self).__init__(image, 180, x, y)
 
         self.game.players.append(self) # add self to list of all players
         self.game.d_players.append(self) # add self to list of defensive players
@@ -1595,14 +2240,13 @@ class STTackle(Basic_defense):
 
         self.speed = 0
         if self.game.team1_offence:
-            self.speed_w = STTackle.base_speed / 2
-            self.speed_r = STTackle.base_speed
+            self.speed_w = STDL.base_speed / 2
+            self.speed_r = STDL.base_speed
         else:
-            self.speed_w = STTackle.base_speed1 / 2
-            self.speed_r = STTackle.base_speed1
+            self.speed_w = STDL.base_speed1 / 2
+            self.speed_r = STDL.base_speed1
         self.legs = False
         self.arms = False
-        self.leg_i = self.create_leg_list(self.leg_i, 1)
         self.tackled = 0
 
     def update(self):
@@ -1619,7 +2263,7 @@ class STTackle(Basic_defense):
                         self.speed = 0
             
         # get Basic_defense's update method
-        super(STTackle, self).update()
+        super(STDL, self).update()
 
     def overlap_func(self):
         self.move(-self.speed, False)
@@ -1628,6 +2272,125 @@ class STTackle(Basic_defense):
         else:
             self.slide(self.speed_r)
 
+class STLB(Basic_defense):
+    base_speed = None
+    base_speed1 = None
+
+    def __init__(self, game, x, y, side):
+        self.game = game
+        self.side = side
+        if self.game.team1_offence:
+            if self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[44]
+            elif self.side == "c":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[45]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team2_images[46]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
+
+        else:
+            if self.side == "l":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[44]
+            elif self.side == "c":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[45]
+            elif self.side == "r":
+                image, self.tackled_i, self.tackled_i1 = self.game.team1_images[46]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
+
+        super(STLB, self).__init__(image, 180, x, y)
+
+        self.game.players.append(self) # add self to list of all players
+        self.game.d_players.append(self) # add self to list of defensive players
+        self.game.can_not_catch.append(self)
+
+        self.speed = 0
+        if self.game.team1_offence:
+            self.speed_w = STLB.base_speed / 2
+            self.speed_r = STLB.base_speed
+        else:
+            self.speed_w = STLB.base_speed1 / 2
+            self.speed_r = STLB.base_speed1
+        self.legs = False
+        self.arms = False
+        self.tackled = 0
+
+    def update(self):
+        if not self.tackled:
+            if not self == self.game.ball_carrier:
+                if self.game.play_status == 0:
+                    if self.game.ball_carrier not in self.game.players and self.game.ball_carrier.play == "punt":
+                        self.speed = self.speed_r
+                        self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y - self.y, self.game.ball_carrier.x - self.x))
+                    elif self.game.ball_carrier in self.game.o_players:
+                        if self.game.passed_line:
+                            self.speed = self.speed_r
+                            self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y - self.y, self.game.ball_carrier.x - self.x))
+                        elif self.side == "r":
+                            if self.game.ball_carrier.x < self.game.field.left + 860:
+                                if self.game.ball_carrier.y < self.game.field.bottom - self.game.line_of_scrimmage - 340:
+                                    distance = abs((self.x - self.game.ball_carrier.x) / -math.cos(self.angle)) * 9/10
+                                    self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y + distance * -math.cos(math.radians(self.game.ball_carrier.angle)) - self.y,
+                                                                              self.game.ball_carrier.x + distance * math.sin(math.radians(self.game.ball_carrier.angle)) - self.x))
+                                    self.speed = self.speed_r
+                                else:
+                                    if self.game.ball_carrier.x < self.x - 50 and self.x > self.game.field.left + 200:
+                                        self.slide(self.speed_r)
+                                    elif self.game.ball_carrier.x > self.x + 50 and self.x < self.game.field.left + 1020:
+                                        self.slide(-self.speed_r)
+                            else:
+                                self.speed = 0
+                        elif self.side == "c":
+                            if self.game.field.left + 860 <= self.game.ball_carrier.x <= self.game.field.right - 860 and self.game.ball_carrier.y < self.game.field.bottom - self.game.line_of_scrimmage - 350:
+                                distance = abs((self.x - self.game.ball_carrier.x) / -math.cos(self.angle)) * 9/10
+                                self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y + distance * -math.cos(math.radians(self.game.ball_carrier.angle)) - self.y,
+                                                                          self.game.ball_carrier.x + distance * math.sin(math.radians(self.game.ball_carrier.angle)) - self.x))
+                                self.speed = self.speed_r
+                            else:
+                                self.speed = 0
+                        elif self.side == "l":
+                            if self.game.ball_carrier.x > self.game.field.right - 860:
+                                if self.game.ball_carrier.y < self.game.field.bottom - self.game.line_of_scrimmage - 340:
+                                    distance = abs((self.x - self.game.ball_carrier.x) / -math.cos(self.angle)) * 9/10
+                                    self.angle = 90 + math.degrees(math.atan2(self.game.ball_carrier.y + distance * -math.cos(math.radians(self.game.ball_carrier.angle)) - self.y,
+                                                                              self.game.ball_carrier.x + distance * math.sin(math.radians(self.game.ball_carrier.angle)) - self.x))
+                                    self.speed = self.speed_r
+                                else:
+                                    if self.game.ball_carrier.x > self.x + 50 and self.x < self.game.field.right - 200:
+                                        self.slide(-self.speed_r)
+                                    elif self.game.ball_carrier.x < self.x - 50 and self.x > self.game.field.right - 1020:
+                                        self.slide(self.speed_r)
+                            else:
+                                self.speed = 0
+                    else:
+                        self.speed = 0
+            
+        # get Basic_defense's update method
+        super(STLB, self).update()
+
 class PR(Basic_defense):
     base_speed = None
     base_speed1 = None
@@ -1635,12 +2398,38 @@ class PR(Basic_defense):
     def __init__(self, game, x, y):
         self.game = game
         if self.game.team1_offence:
-            image = self.load_images(self.game.team2, "pr", "a")
+            image, self.tackled_i, self.tackled_i1 = self.game.team2_images[50]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega3.bmp",
+                      "images\\" + self.game.team2 + "lega2.bmp",
+                      "images\\" + self.game.team2 + "lega1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega6.bmp",
+                      "images\\" + self.game.team2 + "lega5.bmp",
+                      "images\\" + self.game.team2 + "lega4.bmp",
+                      "images\\dot.bmp"])
 
         else:
-            image = self.load_images(self.game.team1, "pr", "h")
+            image, self.tackled_i, self.tackled_i1 = self.game.team1_images[50]
+            self.leg_i = games.load_animation(
+                     ["images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh3.bmp",
+                      "images\\" + self.game.team1 + "legh2.bmp",
+                      "images\\" + self.game.team1 + "legh1.bmp",
+                      "images\\dot.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh6.bmp",
+                      "images\\" + self.game.team1 + "legh5.bmp",
+                      "images\\" + self.game.team1 + "legh4.bmp",
+                      "images\\dot.bmp"])
 
-        super(PR, self).__init__(image=image, angle=180, x=x, y=y)
+        super(PR, self).__init__(image, 180, x, y)
 
         self.game.players.append(self) # add self to list of all players
         self.game.d_players.append(self) # add self to list of defensive players
@@ -1654,7 +2443,6 @@ class PR(Basic_defense):
             self.speed_r = PR.base_speed1
         self.legs = False
         self.arms = False
-        self.leg_i = self.create_leg_list(self.leg_i, 1)
         self.tackled = 0
 
     def update(self):
